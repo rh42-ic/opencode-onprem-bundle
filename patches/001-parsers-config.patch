@@ -1,0 +1,40 @@
+diff --git a/packages/tui/src/parsers-config.ts b/packages/tui/src/parsers-config.ts
+index 0450c4d..b8705f4 100644
+--- a/packages/tui/src/parsers-config.ts
++++ b/packages/tui/src/parsers-config.ts
+@@ -1,9 +1,27 @@
++const ONPREM =
++  typeof process !== "undefined" ? process.env.OPENCODE_ONPREM_DIR : undefined
++
++function localize(parsers: any[]) {
++  if (!ONPREM) return parsers
++  const base = `${ONPREM}/assets/tree-sitter`
++  return parsers.map((p) => ({
++    ...p,
++    wasm: `${base}/wasm/${p.wasm.split("/").pop()}`,
++    queries: Object.fromEntries(
++      Object.entries(p.queries).map(([k, urls]) => [
++        k,
++        (urls as string[]).map((u: string) => `${base}/queries/${p.filetype}/${u.split("/").pop()}`),
++      ]),
++    ),
++  }))
++}
++
+ export default {
+   // NOTE: FOR markdown, javascript and typescript, we use the opentui built-in parsers
+   // Warn: when taking queries from the nvim-treesitter repo, make sure to include the query dependencies as well
+   //       marked with for example `; inherits: ecma` at the top of the file. Just put the dependencies before the actual query.
+   //       ALSO: Some queries use breaking changes in the nvim-treesitter repo, that are not compatible with the (web-)tree-sitter parser.
+-  parsers: [
++  parsers: localize([
+     {
+       filetype: "python",
+       wasm: "https://github.com/tree-sitter/tree-sitter-python/releases/download/v0.23.6/tree-sitter-python.wasm",
+@@ -382,5 +400,5 @@ export default {
+         ],
+       },
+     },
+-  ],
++  ]),
+ }

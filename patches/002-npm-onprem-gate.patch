@@ -1,0 +1,70 @@
+diff --git a/packages/core/src/npm.ts b/packages/core/src/npm.ts
+index 30e12cf..5c2a9e5 100644
+--- a/packages/core/src/npm.ts
++++ b/packages/core/src/npm.ts
+@@ -13,6 +13,28 @@ import { LayerNode } from "./effect/layer-node"
+ import { makeRuntime } from "./effect/runtime"
+ import { NpmConfig } from "./npm-config"
+ 
++const existsSync = (p: string) => {
++  try {
++    return Bun.file(p).exists()
++  } catch {
++    return false
++  }
++}
++
++const findPackageDir = (pkg: string): string | undefined => {
++  const name = sanitize(pkg)
++  const onpremBase = process.env.OPENCODE_ONPREM_DIR
++  if (onpremBase) {
++    const onpremDir = path.join(onpremBase, "assets", "npm", name)
++    if (existsSync(path.join(onpremDir, "node_modules"))) return onpremDir
++  }
++  const cacheDir = path.join(Global.Path.cache, "packages", name)
++  if (existsSync(path.join(cacheDir, "node_modules"))) return cacheDir
++  return undefined
++}
++
++const isOnprem = !!process.env.OPENCODE_ONPREM_DIR
++
+ export class InstallFailedError extends Schema.TaggedErrorClass<InstallFailedError>()("NpmInstallFailedError", {
+   add: Schema.Array(Schema.String).pipe(Schema.optional),
+   dir: Schema.String,
+@@ -113,7 +135,6 @@ const layer = Layer.effect(
+       )
+ 
+     const add = Effect.fn("Npm.add")(function* (pkg: string) {
+-      const dir = directory(pkg)
+       const name = (() => {
+         try {
+           return npa(pkg).name ?? pkg
+@@ -122,6 +143,18 @@ const layer = Layer.effect(
+         }
+       })()
+ 
++      const found = findPackageDir(pkg)
++      if (found) {
++        return resolveEntryPoint(name, path.join(found, "node_modules", name))
++      }
++
++      // onprem 模式：未预置的包直接拒绝，不触发网络安装
++      if (isOnprem) {
++        return yield* new InstallFailedError({ add: [pkg], dir: "" })
++      }
++
++      const dir = directory(pkg)
++
+       if (yield* afs.existsSafe(path.join(dir, "node_modules", name))) {
+         return resolveEntryPoint(name, path.join(dir, "node_modules", name))
+       }
+@@ -190,7 +223,8 @@ const layer = Layer.effect(
+     }, Effect.scoped)
+ 
+     const which = Effect.fn("Npm.which")(function* (pkg: string, bin?: string) {
+-      const dir = directory(pkg)
++      const found = findPackageDir(pkg)
++      const dir = found ?? directory(pkg)
+       const binDir = path.join(dir, "node_modules", ".bin")
+ 
+       const pick = Effect.fnUntraced(function* () {

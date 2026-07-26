@@ -1,0 +1,3 @@
+{
+  "plugins": ["opencode-gemini-auth", "opencode-copilot-auth"]
+}

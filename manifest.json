@@ -1,0 +1,43 @@
+{
+  "version": "1.18.5",
+  "upstream": "https://github.com/anomalyco/opencode",
+  "compatibility": {
+    "bun": ">=1.3.14",
+    "node": ">=22.0.0",
+    "platforms": ["linux", "darwin", "win32"],
+    "architectures": ["x64", "arm64"]
+  },
+  "patches": [
+    {
+      "file": "001-parsers-config.patch",
+      "target": "packages/tui/src/parsers-config.ts",
+      "description": "在 OPENCODE_ONPREM_DIR 已设置时，将 tree-sitter wasm 和 query 的远程 URL 映射为本地路径"
+    },
+    {
+      "file": "002-npm-onprem-gate.patch",
+      "target": "packages/core/src/npm.ts",
+      "description": "新增 findPackageDir() 函数，onprem 模式下阻断 npm 网络安装"
+    }
+  ],
+  "assets": {
+    "tree_sitter_wasm": 31,
+    "tree_sitter_queries": "~50 files",
+    "ripgrep": "15.1.0",
+    "github_lsp": 7,
+    "npm_packages": 12,
+    "extra_plugins": ["opencode-gemini-auth", "opencode-copilot-auth"]
+  },
+  "env_vars": {
+    "OPENCODE_ONPREM_DIR": "bundle 根目录路径（由 env.sh 自动设置）",
+    "OPENCODE_DISABLE_AUTOUPDATE": "禁用自动更新",
+    "OPENCODE_DISABLE_MODELS_FETCH": "禁用模型列表获取",
+    "OPENCODE_DISABLE_LSP_DOWNLOAD": "禁用 LSP 自动下载"
+  },
+  "build": {
+    "cli_entry": "packages/opencode",
+    "cli_build_cmd": "bun run build --single",
+    "desktop_prebuild_cmd": "OPENCODE_CHANNEL=dev bun run prebuild",
+    "desktop_build_cmd": "OPENCODE_CHANNEL=dev bun run build",
+    "desktop_package_cmd": "npx electron-builder --linux --dir --config electron-builder.config.ts"
+  }
+}
