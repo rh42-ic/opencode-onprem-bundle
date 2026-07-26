@@ -32,7 +32,8 @@ const dryRun = args.includes("--dry-run")
 
 // ── helpers ───────────────────────────────────────────────
 function readManifest() {
-  const manifestPath = path.join(rootDir, "..", "opencode-onprem-bundle", "manifest.json")
+  // manifest.json 由 CI workflow 复制到 scripts/onprem/ 中
+  const manifestPath = path.join(__dirname, "manifest.json")
   return JSON.parse(fs.readFileSync(manifestPath, "utf-8"))
 }
 
@@ -45,31 +46,17 @@ async function checkPatchesApplied(): Promise<boolean> {
 }
 
 async function applyPatches() {
-  const patchesDir = path.join(rootDir, "..", "opencode-onprem-bundle", "patches")
-  const patches = fs.readdirSync(patchesDir)
-    .filter((f) => f.endsWith(".patch"))
-    .sort()
-    .map((f) => path.join(patchesDir, f))
-
-  for (const patch of patches) {
-    console.log(`  Applying: ${path.basename(patch)}`)
-    const result = await $`git apply --check ${patch}`.cwd(rootDir).quiet().nothrow()
-    if (result.exitCode !== 0) {
-      console.error(`  ✗ Patch failed check:`)
-      console.error(result.stderr.toString())
-      process.exit(1)
-    }
-    await $`git apply ${patch}`.cwd(rootDir).quiet()
-  }
-  console.log("  ✓ All patches applied\n")
+  // patches 应由 CI workflow 在调用 pack.ts 前通过 git apply 应用
+  console.error("  ✗ Patches not applied! Run 'git apply patches/*.patch' in upstream first.")
+  process.exit(1)
 }
 
-async function buildCli(bundleDir: string) {
+async function buildCli(bundleDir: string, version: string) {
   console.log("🔨 Phase A: Building CLI...\n")
 
   process.chdir(path.join(rootDir, "packages", "opencode"))
   if (!dryRun) {
-    await $`bun run build --single --skip-install`.cwd(process.cwd())
+    await $`bun run build --single --skip-install`.cwd(process.cwd()).env({ ...process.env, OPENCODE_VERSION: version })
   }
 
   // Find the built binary
@@ -103,14 +90,15 @@ async function buildCli(bundleDir: string) {
   return buildDir.name
 }
 
-async function buildDesktop(bundleDir: string) {
+async function buildDesktop(bundleDir: string, version: string) {
   console.log("🔨 Phase B: Building Desktop...\n")
+  const buildEnv = { ...process.env, OPENCODE_VERSION: version, OPENCODE_CHANNEL: "dev" }
 
   // Step 1: Build opencode node bundle
   console.log("  [1/4] Building opencode node bundle...")
   process.chdir(path.join(rootDir, "packages", "opencode"))
   if (!dryRun) {
-    await $`bun run script/build-node.ts`.cwd(process.cwd()).quiet()
+    await $`bun run script/build-node.ts`.cwd(process.cwd()).env(buildEnv).quiet()
   }
   console.log("  ✓ node bundle built")
 
@@ -118,7 +106,7 @@ async function buildDesktop(bundleDir: string) {
   console.log("  [2/4] Building frontend SPA...")
   const appDir = path.join(rootDir, "packages", "app")
   if (!dryRun) {
-    await $`bun run build`.cwd(appDir).quiet()
+    await $`bun run build`.cwd(appDir).env(buildEnv).quiet()
   }
   console.log("  ✓ SPA built")
 
@@ -126,9 +114,8 @@ async function buildDesktop(bundleDir: string) {
   console.log("  [3/4] Building desktop (electron-vite)...")
   const desktopDir = path.join(rootDir, "packages", "desktop")
   if (!dryRun) {
-    await $`bun run prebuild`.cwd(desktopDir).quiet()
-    // OPENCODE_CHANNEL=dev for dev channel build
-    await $`bun run build`.cwd(desktopDir).env({ ...process.env, OPENCODE_CHANNEL: "dev" }).quiet()
+    await $`bun run prebuild`.cwd(desktopDir).env(buildEnv).quiet()
+    await $`bun run build`.cwd(desktopDir).env(buildEnv).quiet()
   }
   console.log("  ✓ Desktop built")
 
@@ -148,8 +135,7 @@ async function buildDesktop(bundleDir: string) {
 
     await $`npx electron-builder ${buildArgs}`.cwd(desktopDir)
       .env({
-        ...process.env,
-        OPENCODE_CHANNEL: "dev",
+        ...buildEnv,
         ...(platform === "darwin" ? { CSC_IDENTITY_AUTO_DISCOVERY: "false" } : {}),
       })
       .quiet()
@@ -230,12 +216,13 @@ async function createSymlinks(bundleDir: string) {
 async function main() {
   const manifest = readManifest()
   const version = manifest.version
+  const buildVersion = `${version}-onprem`
   const bundleName = `opencode-onprem-v${version}-${platform}-${arch}`
   const bundleDir = path.join(rootDir, "dist", bundleName)
 
   console.log(`\n╔══════════════════════════════════════════════════╗`)
   console.log(`║  opencode onprem pack                            ║`)
-  console.log(`║  version:  ${version.padEnd(35)} ║`)
+  console.log(`║  version:  ${buildVersion.padEnd(35)} ║`)
   console.log(`║  platform: ${platform.padEnd(35)} ║`)
   console.log(`║  arch:     ${arch.padEnd(35)} ║`)
   console.log(`║  output:   ${bundleDir}  ║`)
@@ -257,10 +244,10 @@ async function main() {
   }
 
   // ── Phase A: Build CLI ────────────────────────────────
-  await buildCli(bundleDir)
+  await buildCli(bundleDir, buildVersion)
 
   // ── Phase B: Build Desktop ────────────────────────────
-  await buildDesktop(bundleDir)
+  await buildDesktop(bundleDir, buildVersion)
 
   // ── Phase C: Download assets ──────────────────────────
   console.log("📦 Phase C: Downloading assets...\n")
@@ -276,7 +263,7 @@ async function main() {
   await createSymlinks(bundleDir)
 
   // ── Copy env.sh ──────────────────────────────────────
-  const envSrc = path.join(rootDir, "..", "opencode-onprem-bundle", "scripts", "env.sh")
+  const envSrc = path.join(__dirname, "env.sh")
   const envDest = path.join(bundleDir, "env.sh")
   if (!dryRun) {
     fs.copyFileSync(envSrc, envDest)
@@ -286,15 +273,16 @@ async function main() {
   // ── Package ──────────────────────────────────────────
   console.log("📦 Packaging...")
 
-  const archiveName = `${bundleName}.tar.zst`
+  const isWin = platform === "win32"
+  const archiveName = isWin ? `${bundleName}.7z` : `${bundleName}.tar.zst`
   const archivePath = path.join(rootDir, "dist", archiveName)
 
   if (!dryRun) {
-    if (platform === "win32") {
-      // Windows: use 7z
+    if (isWin) {
+      // Windows: 7z 容器 + zstd 压缩，用户可用 7-Zip/WinRAR 直接打开
       await $`7z a -tzstd ${archivePath} ${bundleDir}`.cwd(path.join(rootDir, "dist")).quiet()
     } else {
-      // Linux/macOS: use tar --zstd
+      // Linux/macOS: tar 归档 + zstd 压缩
       await $`tar --zstd -cf ${archivePath} -C ${path.join(rootDir, "dist")} ${bundleName}`.quiet()
     }
   }

@@ -53,79 +53,89 @@ function getRgTarget(): string {
 interface LspDef {
   name: string
   repo: string
-  assetPattern: string | ((platform: string, arch: string) => string)
+  /** 返回该平台必须匹配的关键词列表 */
+  keywords: (platform: string, arch: string) => string[]
+  /** 优先匹配的文件扩展名 */
+  preferExt: string[]
   binaryPath: string
   stripComponents?: number
+  /** 非 GitHub Releases 的自定义下载源 */
+  customRelease?: () => Promise<{ url: string; name: string }>
 }
 
 const LSP_DEFS: LspDef[] = [
   {
     name: "rust-analyzer",
     repo: "rust-lang/rust-analyzer",
-    assetPattern: (p: string, a: string) => {
-      const pa = `${mapArch(a)}-${p === "darwin" ? "apple-darwin" : p === "win32" ? "pc-windows-msvc" : "unknown-linux-gnu"}`
-      return `rust-analyzer-${pa}.gz`
+    keywords: (p: string, a: string) => {
+      const triple = `${mapArch(a)}-${p === "darwin" ? "apple-darwin" : p === "win32" ? "pc-windows-msvc" : "unknown-linux-gnu"}`
+      return [triple]
     },
+    preferExt: [".gz"],
     binaryPath: "rust-analyzer",
   },
   {
     name: "clangd",
     repo: "clangd/clangd",
-    assetPattern: (p: string, a: string) => {
+    keywords: (p: string) => {
       const plat = p === "linux" ? "linux" : p === "darwin" ? "mac" : "windows"
-      return `clangd_.*_${plat}_.*\\.(tar\\.gz|zip)`
+      return ["clangd", plat]
     },
+    preferExt: [".tar.gz", ".zip"],
     binaryPath: "clangd/bin/clangd",
     stripComponents: 1,
   },
   {
     name: "zls",
     repo: "zigtools/zls",
-    assetPattern: (p: string, a: string) => {
-      const pa = `${mapArch(a)}-${p === "darwin" ? "macos" : p === "win32" ? "windows" : "linux"}`
-      return `zls-${pa}\\.(tar\\.gz|tar\\.xz|zip)`
+    keywords: (p: string, a: string) => {
+      const plat = p === "darwin" ? "macos" : p === "win32" ? "windows" : "linux"
+      return ["zls", mapArch(a), plat]
     },
+    preferExt: [".tar.xz", ".tar.gz", ".zip"],
     binaryPath: "zls",
   },
   {
     name: "lua-ls",
     repo: "LuaLS/lua-language-server",
-    assetPattern: (p: string, a: string) => {
+    keywords: (p: string, a: string) => {
       const plat = p === "linux" ? "linux" : p === "darwin" ? "darwin" : "win32"
-      const aa = a === "x64" ? "x64" : "arm64"
-      return `lua-language-server-.*-${plat}-${aa}\\.tar\\.gz`
+      return ["lua-language-server", plat, a === "x64" ? "x64" : "arm64"]
     },
+    preferExt: [".tar.gz"],
     binaryPath: "bin/lua-language-server",
     stripComponents: 0,
   },
   {
     name: "terraform-ls",
     repo: "hashicorp/terraform-ls",
-    assetPattern: (p: string, a: string) => {
+    keywords: (p: string, a: string) => {
       const plat = p === "linux" ? "linux" : p === "darwin" ? "darwin" : "windows"
       const aa = a === "x64" ? "amd64" : "arm64"
-      return `terraform-ls_.*_${plat}_${aa}\\.zip`
+      return ["terraform-ls", plat, aa]
     },
+    preferExt: [".zip"],
     binaryPath: "terraform-ls",
+    customRelease: async () => downloadHashiCorpRelease("terraform-ls"),
   },
   {
     name: "texlab",
     repo: "latex-lsp/texlab",
-    assetPattern: (p: string, a: string) => {
+    keywords: (p: string, a: string) => {
       const plat = p === "linux" ? "linux" : p === "darwin" ? "macos" : "windows"
-      const aa = mapArch(a)
-      return `texlab-${plat}-${aa}\\.(tar\\.gz|zip)`
+      return ["texlab", plat, mapArch(a)]
     },
+    preferExt: [".tar.gz", ".zip"],
     binaryPath: "texlab",
   },
   {
     name: "tinymist",
     repo: "Myriad-Dreamin/tinymist",
-    assetPattern: (p: string, a: string) => {
+    keywords: (p: string, a: string) => {
       const plat = p === "linux" ? "linux" : p === "darwin" ? "darwin" : "win32"
-      const aa = mapArch(a)
-      return `tinymist-${plat}-${aa}\\.(tar\\.gz|zip)`
+      return ["tinymist", plat, mapArch(a)]
     },
+    preferExt: [".tar.gz", ".zip"],
     binaryPath: "tinymist",
   },
 ]
@@ -158,11 +168,41 @@ async function download(url: string, dest: string): Promise<void> {
 
 async function downloadGithubRelease(repo: string): Promise<any> {
   const url = `https://api.github.com/repos/${repo}/releases/latest`
-  const resp = await fetch(url, {
-    headers: { Accept: "application/vnd.github.v3+json", "User-Agent": "opencode-onprem" },
-  })
-  if (!resp.ok) throw new Error(`GitHub API ${resp.status}: ${repo}`)
-  return resp.json()
+  // Retry with exponential backoff for rate limiting (403)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const resp = await fetch(url, {
+      headers: { Accept: "application/vnd.github.v3+json", "User-Agent": "opencode-onprem" },
+    })
+    if (resp.status === 403 && attempt < 2) {
+      const retryAfter = parseInt(resp.headers.get("Retry-After") ?? "") || 10
+      console.log(`  ⏳ rate limited, waiting ${retryAfter}s...`)
+      await new Promise((r) => setTimeout(r, retryAfter * 1000))
+      continue
+    }
+    if (!resp.ok) throw new Error(`GitHub API ${resp.status}: ${repo}`)
+    return resp.json()
+  }
+  throw new Error(`GitHub API 403 (rate limited): ${repo}`)
+}
+
+/** HashiCorp releases (terraform-ls etc.) — they don't use GitHub Releases */
+async function downloadHashiCorpRelease(product: string): Promise<{ url: string; name: string }> {
+  const indexUrl = `https://releases.hashicorp.com/${product}/index.json`
+  const resp = await fetch(indexUrl)
+  if (!resp.ok) throw new Error(`HashiCorp index ${resp.status}: ${product}`)
+  const data: any = await resp.json()
+  // Structure: { name, versions: { "0.39.0": { builds: [{os, arch, url, filename}] } } }
+  const versions: Record<string, any> = data.versions ?? {}
+  const sorted = Object.keys(versions).sort().reverse()
+  const latest = sorted[0]
+  if (!latest) throw new Error(`No versions for ${product}`)
+  const plat = platform === "darwin" ? "darwin" : platform === "win32" ? "windows" : "linux"
+  const aa = arch === "x64" ? "amd64" : "arm64"
+  // Find matching build
+  const builds: any[] = versions[latest].builds ?? []
+  const match = builds.find((b: any) => b.os === plat && b.arch === aa)
+  if (!match) throw new Error(`No ${plat}/${aa} build for ${product} ${latest}`)
+  return { url: match.url, name: match.filename }
 }
 
 async function extractArchive(archivePath: string, destDir: string, stripComponents = 0): Promise<string> {
@@ -170,8 +210,18 @@ async function extractArchive(archivePath: string, destDir: string, stripCompone
   const ext = path.extname(archivePath).toLowerCase()
   const name = path.basename(archivePath)
 
-  if (ext === ".gz" || ext === ".xz") {
+  const isTarGz = name.endsWith(".tar.gz") || name.endsWith(".tgz")
+  const isBareGz = ext === ".gz" && !isTarGz
+
+  if (isTarGz || ext === ".xz") {
     await $`tar -xf ${archivePath} -C ${destDir}`.quiet()
+  } else if (isBareGz) {
+    // bare gzip (e.g. rust-analyzer)
+    const outName = name.replace(/\.gz$/, "")
+    const outPath = path.join(destDir, outName)
+    await $`gunzip -c ${archivePath} > ${outPath}`.quiet()
+    fs.chmodSync(outPath, 0o755)
+    return outPath
   } else if (ext === ".zip") {
     await $`unzip -qo ${archivePath} -d ${destDir}`.quiet()
   } else {
@@ -197,12 +247,8 @@ async function extractArchive(archivePath: string, destDir: string, stripCompone
       if (fs.existsSync(dst)) fs.rmSync(dst, { recursive: true, force: true })
       fs.renameSync(src, dst)
     }
-    // Clean up empty dirs
-    for (const entry of fs.readdirSync(destDir, { withFileTypes: true })) {
-      if (entry.isDirectory()) {
-        fs.rmSync(path.join(destDir, entry.name), { recursive: true, force: true })
-      }
-    }
+    // Only remove the original archive top-level directory (now empty)
+    fs.rmSync(path.join(destDir, topDir.name), { recursive: true, force: true })
   }
   return destDir
 }
@@ -221,7 +267,8 @@ async function main() {
   console.log("📦 [1/5] Downloading tree-sitter resources...\n")
 
   // Dynamically load parsers config from upstream
-  const parsersConfigPath = path.resolve(outDir, "../../packages/tui/src/parsers-config.ts")
+  const __dirname = path.dirname(fileURLToPath(import.meta.url))
+  const parsersConfigPath = path.resolve(__dirname, "../../packages/tui/src/parsers-config.ts")
   const parsersConfig = (await import(parsersConfigPath)).default
   const parsers = parsersConfig.parsers ?? parsersConfig
 
@@ -306,7 +353,6 @@ async function main() {
 
   for (const lsp of LSP_DEFS) {
     const lspDir = path.join(outDir, "lsp", lsp.name)
-    const pattern = typeof lsp.assetPattern === "function" ? lsp.assetPattern(platform, arch) : lsp.assetPattern
 
     // Check if already exists
     const binaryExists = (() => {
@@ -327,17 +373,57 @@ async function main() {
     }
 
     try {
-      const release = await downloadGithubRelease(lsp.repo)
-      const asset = release.assets.find((a: any) => new RegExp(pattern, "i").test(a.name))
-      if (!asset) {
-        console.log(`  ✗ ${lsp.name}: no asset matching "${pattern}"`)
-        continue
+      let archiveName: string
+      let downloadUrl: string
+
+      if (lsp.customRelease) {
+        const cr = await lsp.customRelease()
+        archiveName = cr.name
+        downloadUrl = cr.url
+      } else {
+        const release = await downloadGithubRelease(lsp.repo)
+        const keywords = lsp.keywords(platform, arch).map((k) => k.toLowerCase())
+
+        // Filter assets: ALL keywords must appear in the name
+        const candidates = (release.assets as any[])
+          .filter((a: any) => {
+            const name = a.name.toLowerCase()
+            return keywords.every((kw) => name.includes(kw))
+          })
+          // Sort by preferred extension, then penalize "docs" / "source" (non-binary) assets
+          .sort((a: any, b: any) => {
+            const aIdx = lsp.preferExt.findIndex((ext) => a.name.endsWith(ext))
+            const bIdx = lsp.preferExt.findIndex((ext) => b.name.endsWith(ext))
+            const extScore = (aIdx === -1 ? 99 : aIdx) - (bIdx === -1 ? 99 : bIdx)
+            if (extScore !== 0) return extScore
+            // Prefer non-docs assets
+            const aDocs = /docs|source|viewer/i.test(a.name) ? 1 : 0
+            const bDocs = /docs|source|viewer/i.test(b.name) ? 1 : 0
+            return aDocs - bDocs
+          })
+
+        const asset = candidates[0]
+        if (!asset) {
+          console.log(`  ✗ ${lsp.name}: no asset matching keywords [${keywords.join(", ")}]`)
+          console.log(`    available: ${(release.assets as any[]).map((a: any) => a.name).join(", ")}`)
+          continue
+        }
+        archiveName = asset.name
+        downloadUrl = asset.browser_download_url
       }
 
-      const archivePath = path.join(lspDir, asset.name)
-      await download(asset.browser_download_url, archivePath)
-      await extractArchive(archivePath, lspDir, lsp.stripComponents ?? 0)
+      const archivePath = path.join(lspDir, archiveName)
+      const extracted = await download(downloadUrl, archivePath).then(() =>
+        extractArchive(archivePath, lspDir, lsp.stripComponents ?? 0),
+      )
       fs.rmSync(archivePath, { force: true })
+
+      // rust-analyzer bare .gz extracts to a file with arch suffix; rename to expected name
+      const expectedBin = path.join(lspDir, lsp.binaryPath.split("/").pop()!)
+      if (!fs.existsSync(expectedBin) && extracted && fs.existsSync(extracted) && fs.statSync(extracted).isFile() && extracted !== expectedBin) {
+        fs.renameSync(extracted, expectedBin)
+      }
+
       stats.lsp++
       console.log(`  ✓ ${lsp.name}`)
     } catch (e: any) {
@@ -351,9 +437,9 @@ async function main() {
   const tmpDir = path.join(outDir, ".tmp-npm")
   fs.mkdirSync(tmpDir, { recursive: true })
 
-  // Read extra plugins from plugins.json
+  // Read extra plugins from plugins.json (relative to upstream root)
   let extraPlugins: string[] = []
-  const pluginsJsonPath = path.resolve(outDir, "../plugins.json")
+  const pluginsJsonPath = path.resolve(__dirname, "plugins.json")
   if (fs.existsSync(pluginsJsonPath)) {
     const pluginsJson = JSON.parse(fs.readFileSync(pluginsJsonPath, "utf-8"))
     extraPlugins = pluginsJson.plugins ?? []
@@ -362,8 +448,8 @@ async function main() {
   const allPackages = [...NPM_PACKAGES, ...extraPlugins]
 
   for (const pkg of allPackages) {
-    const name = pkg.replace("/", "+").replace("@", "")
-    const destDir = path.join(outDir, "npm", name)
+    const safeName = pkg.replace("/", "+")
+    const destDir = path.join(outDir, "npm", safeName)
     if (fs.existsSync(path.join(destDir, "node_modules"))) {
       console.log(`  ✓ ${pkg} (cached)`)
       stats.npm++
@@ -371,12 +457,21 @@ async function main() {
     }
 
     try {
-      const pkgTmp = path.join(tmpDir, name)
+      const pkgTmp = path.join(tmpDir, safeName)
       fs.mkdirSync(pkgTmp, { recursive: true })
 
-      // Use bun to install the package
+      // Create minimal package.json so bun add works
+      fs.writeFileSync(
+        path.join(pkgTmp, "package.json"),
+        JSON.stringify({ name: `tmp-${safeName}`, private: true }, null, 2),
+      )
+
+      // Install the package (point bun cache to writable tmp)
       console.log(`  ↓ ${pkg}`)
-      await $`bun add ${pkg}`.cwd(pkgTmp).quiet()
+      await $`bun add ${pkg}`.cwd(pkgTmp).env({
+        ...process.env,
+        BUN_INSTALL_CACHE_DIR: path.join(tmpDir, ".bun-cache"),
+      }).quiet()
 
       // Copy node_modules to dest
       const srcNodeModules = path.join(pkgTmp, "node_modules")

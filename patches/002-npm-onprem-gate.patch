@@ -15,7 +15,7 @@ index 30e12cf..5c2a9e5 100644
 +}
 +
 +const findPackageDir = (pkg: string): string | undefined => {
-+  const name = sanitize(pkg)
++  const name = pkg.replace("/", "+")
 +  const onpremBase = process.env.OPENCODE_ONPREM_DIR
 +  if (onpremBase) {
 +    const onpremDir = path.join(onpremBase, "assets", "npm", name)

@@ -54,7 +54,7 @@ export function findPackageDir(pkg: string, cacheDir?: string): string | undefin
  * 清理包名中的特殊字符（与 npm.ts 中的 sanitize 保持一致）
  */
 export function sanitize(pkg: string): string {
-  return pkg.replace(/[@/]/g, "+")
+  return pkg.replace("/", "+")
 }
 
 /**
