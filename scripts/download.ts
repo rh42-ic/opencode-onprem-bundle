@@ -156,6 +156,25 @@ const NPM_PACKAGES = [
   "@biomejs/biome",
 ]
 
+/**
+ * 从 "name@spec" 中提取纯 npm 包名。
+ * 支持 git URL:  "superpowers@git+https://github.com/obra/superpowers.git" → "superpowers"
+ * 支持 scoped:   "@tarquinen/opencode-dcp@latest"   → "@tarquinen/opencode-dcp"
+ * 普通包:        "opencode-anthropic-auth@latest"     → "opencode-anthropic-auth"
+ */
+function extractPackageName(pkg: string): string {
+  // scoped package: @scope/name 或 @scope/name@spec
+  if (pkg.startsWith("@")) {
+    const slash = pkg.indexOf("/")
+    if (slash === -1) return pkg
+    const after = pkg.indexOf("@", slash)
+    return after >= 0 ? pkg.slice(0, after) : pkg
+  }
+  // non-scoped: name 或 name@spec（包括 git URL）
+  const at = pkg.indexOf("@")
+  return at >= 0 ? pkg.slice(0, at) : pkg
+}
+
 // ── helpers ───────────────────────────────────────────────
 async function download(url: string, dest: string): Promise<void> {
   console.log(`  ↓ ${url.split("/").pop()}`)
@@ -448,7 +467,7 @@ async function main() {
   const allPackages = [...NPM_PACKAGES, ...extraPlugins]
 
   for (const pkg of allPackages) {
-    const safeName = pkg.replace("/", "+")
+    const safeName = extractPackageName(pkg).replace("/", "+")
     const destDir = path.join(outDir, "npm", safeName)
     if (fs.existsSync(path.join(destDir, "node_modules"))) {
       console.log(`  ✓ ${pkg} (cached)`)

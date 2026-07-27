@@ -1,3 +1,11 @@
 {
-  "plugins": ["opencode-gemini-auth", "opencode-copilot-auth"]
+  "plugins": [
+    "opencode-anthropic-auth@latest",
+    "oh-my-openagent@latest",
+    "oh-my-opencode-slim@latest",
+    "superpowers@git+https://github.com/obra/superpowers.git",
+    "@tarquinen/opencode-dcp@latest",
+    "opencode-supermemory@latest",
+    "opencode-visual-cache@latest"
+  ]
 }

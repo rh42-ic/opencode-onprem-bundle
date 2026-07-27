@@ -16,7 +16,7 @@
     {
       "file": "002-npm-onprem-gate.patch",
       "target": "packages/core/src/npm.ts",
-      "description": "新增 findPackageDir() 函数，onprem 模式下阻断 npm 网络安装"
+      "description": "新增 findPackageDir() 函数（用 npa 解析 git URL/@latest 等格式提取包名），onprem 模式下阻断 npm 网络安装"
     }
   ],
   "assets": {
@@ -25,7 +25,7 @@
     "ripgrep": "15.1.0",
     "github_lsp": 7,
     "npm_packages": 12,
-    "extra_plugins": ["opencode-gemini-auth", "opencode-copilot-auth"]
+    "extra_plugins": ["opencode-anthropic-auth", "oh-my-openagent", "oh-my-opencode-slim", "superpowers", "@tarquinen/opencode-dcp", "opencode-supermemory", "opencode-visual-cache"]
   },
   "env_vars": {
     "OPENCODE_ONPREM_DIR": "bundle 根目录路径（由 env.sh 自动设置）",
