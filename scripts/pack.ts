@@ -218,19 +218,27 @@ async function createSymlinks(bundleDir: string, platform: string) {
   }
 }
 
-/** Windows: Scoop-style shims — 每个工具一个 .shim 配置 + shim.exe 副本 */
+/** Windows: native LSP 用 Scoop-style shim，rg 直接复制到 bin/ */
 async function createShims(bundleDir: string) {
   const binDir = path.join(bundleDir, "bin")
   const shimExeSrc = path.join(bundleDir, "assets", "shim.exe")
 
   if (!fs.existsSync(shimExeSrc)) {
-    console.log("  ⚠ shim.exe not found in assets/, skipping shim creation\n")
+    console.log("  ⚠ shim.exe not found in assets/, skipping\n")
     return
   }
 
-  // name → relative path from bundle root (Windows separators, no extension)
-  const native = [
-    { name: "rg", path: "assets\\rg\\rg" },
+  // rg 高频调用，直接复制，不经过 shim
+  const rgSrc = path.join(bundleDir, "assets", "rg", "rg.exe")
+  if (fs.existsSync(rgSrc)) {
+    fs.copyFileSync(rgSrc, path.join(binDir, "rg.exe"))
+    console.log(`  rg.exe (copy) → assets\\rg\\rg.exe`)
+  }
+
+  // npm LSP（typescript-language-server 等）走 Npm.which() 直接拿
+  // node_modules/.bin/xxx.cmd 路径，不经过 bin/，因此不需要 shim。
+  // 这里只为 native LSP 创建 shim。
+  const tools = [
     { name: "rust-analyzer", path: "assets\\lsp\\rust-analyzer\\rust-analyzer" },
     { name: "clangd", path: "assets\\lsp\\clangd\\bin\\clangd" },
     { name: "zls", path: "assets\\lsp\\zls\\zls" },
@@ -240,35 +248,15 @@ async function createShims(bundleDir: string) {
     { name: "tinymist", path: "assets\\lsp\\tinymist\\tinymist" },
   ]
 
-  const npm = [
-    { name: "typescript-language-server", path: "assets\\npm\\typescript-language-server\\node_modules\\.bin\\typescript-language-server" },
-    { name: "vue-language-server", path: "assets\\npm\\@vue+language-server\\node_modules\\.bin\\vue-language-server" },
-    { name: "pyright-langserver", path: "assets\\npm\\pyright\\node_modules\\.bin\\pyright-langserver" },
-    { name: "svelteserver", path: "assets\\npm\\svelte-language-server\\node_modules\\.bin\\svelteserver" },
-    { name: "astro-ls", path: "assets\\npm\\@astrojs+language-server\\node_modules\\.bin\\astro-ls" },
-    { name: "yaml-language-server", path: "assets\\npm\\yaml-language-server\\node_modules\\.bin\\yaml-language-server" },
-    { name: "bash-language-server", path: "assets\\npm\\bash-language-server\\node_modules\\.bin\\bash-language-server" },
-    { name: "docker-langserver", path: "assets\\npm\\dockerfile-language-server-nodejs\\node_modules\\.bin\\docker-langserver" },
-    { name: "intelephense", path: "assets\\npm\\intelephense\\node_modules\\.bin\\intelephense" },
-    { name: "biome", path: "assets\\npm\\biome\\node_modules\\.bin\\biome" },
-    { name: "prettier", path: "assets\\npm\\prettier\\node_modules\\.bin\\prettier" },
-  ]
-
-  for (const tool of [...native, ...npm]) {
-    // Resolve actual file: native may be <name> or <name>.exe; npm must be <name>.cmd
+  for (const tool of tools) {
+    const absBase = path.join(bundleDir, tool.path)
     let relPath: string
-    if (npm.includes(tool)) {
-      relPath = tool.path + ".cmd"
+    if (fs.existsSync(absBase + ".exe")) {
+      relPath = tool.path + ".exe"
+    } else if (fs.existsSync(absBase)) {
+      relPath = tool.path
     } else {
-      const absBase = path.join(bundleDir, tool.path)
-      if (fs.existsSync(absBase + ".exe")) {
-        relPath = tool.path + ".exe"
-      } else if (fs.existsSync(absBase)) {
-        relPath = tool.path
-      } else {
-        // Fallback: try .exe (most common)
-        relPath = tool.path + ".exe"
-      }
+      relPath = tool.path + ".exe" // fallback
     }
 
     const shimCfg = `path = "%OPENCODE_ONPREM_DIR%\\${relPath}"\n`
@@ -355,8 +343,8 @@ async function main() {
 
   if (!dryRun) {
     if (isWin) {
-      // Windows: 7z 容器 + zstd 压缩，用户可用 7-Zip/WinRAR 直接打开
-      await $`7z a -tzstd ${archivePath} ${bundleDir}`.cwd(path.join(rootDir, "dist")).quiet()
+      // Windows: 标准 7z（LZMA2），任何 7-Zip/WinRAR 均可打开
+      await $`7z a ${archivePath} ${bundleDir}`.cwd(path.join(rootDir, "dist")).quiet()
     } else {
       // Linux/macOS: tar 归档 + zstd 压缩
       await $`tar --zstd -cf ${archivePath} -C ${path.join(rootDir, "dist")} ${bundleName}`.quiet()

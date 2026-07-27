@@ -32,6 +32,7 @@ jobs:
           fi
           echo "upstream_ver=$UPSTREAM_VER" >> $GITHUB_OUTPUT
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "→ upstream=$UPSTREAM_VER  tag=$TAG_NAME"
 
   # ── build: matrix 构建 ─────────────────────────────────
   build:
@@ -51,7 +52,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Bun
@@ -60,42 +61,56 @@ jobs:
           bun-version: latest
 
       - name: Sync manifest version
+        shell: bash
         run: |
           node -e "
-            const m = require('./manifest.json');
+            const fs = require('fs');
+            const m = JSON.parse(fs.readFileSync('./manifest.json', 'utf-8'));
             m.version = '${{ needs.vars.outputs.upstream_ver }}';
-            require('fs').writeFileSync('./manifest.json', JSON.stringify(m, null, 2) + '\n');
+            fs.writeFileSync('./manifest.json', JSON.stringify(m, null, 2) + '\n');
           "
-          echo "manifest.json: $(node -e "console.log(require('./manifest.json').version)")"
+          echo "  ✓ manifest.json → v$(node -p "require('./manifest.json').version")"
 
-      - name: Download upstream
+      - name: Normalize patch line endings
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          sed -i 's/\r$//' patches/*.patch
+          echo "  ✓ patches normalized to LF"
+
+      - name: Download upstream v${{ needs.vars.outputs.upstream_ver }}
+        shell: bash
         run: |
           UPSTREAM_VER="${{ needs.vars.outputs.upstream_ver }}"
           mkdir -p upstream
           curl -fsSL "https://github.com/anomalyco/opencode/archive/refs/tags/v${UPSTREAM_VER}.tar.gz" \
             | tar -xz -C upstream --strip-components=1
-          echo "UPSTREAM_DIR=$PWD/upstream" >> $GITHUB_ENV
+          echo "  ✓ upstream v${UPSTREAM_VER}"
 
-      - name: Init git & apply patches
+      - name: Apply onprem patches
+        shell: bash
         working-directory: upstream
         run: |
           git init
+          git config core.autocrlf false
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .
           git commit -m "chore: init upstream v${{ needs.vars.outputs.upstream_ver }}"
 
+          shopt -s nullglob
           for patch in ../patches/*.patch; do
-            echo "→ $(basename "$patch")"
+            echo "  → $(basename "$patch")"
             git apply --check "$patch"
             git apply "$patch"
           done
-          echo "✓ patches applied"
+          echo "  ✓ all patches applied"
 
-          grep -q "const ONPREM =" packages/tui/src/parsers-config.ts && echo "✓ 001 verified" || exit 1
-          grep -q "findPackageDir" packages/core/src/npm.ts && echo "✓ 002 verified" || exit 1
+          grep -q "const ONPREM =" packages/tui/src/parsers-config.ts && echo "  ✓ 001 verified" || exit 1
+          grep -q "findPackageDir" packages/core/src/npm.ts && echo "  ✓ 002 verified" || exit 1
 
-      - name: Copy scripts + assets into upstream
+      - name: Copy build scripts
+        shell: bash
         run: |
           DST="upstream/scripts/onprem"
           mkdir -p "$DST"
@@ -106,41 +121,57 @@ jobs:
           cp scripts/env.ps1    "$DST/"
           cp manifest.json      "$DST/"
           cp plugins.json       "$DST/"
-          echo "✓ copied to $DST:"
-          ls "$DST"
+          echo "  ✓ copied to $DST/"
+          ls "$DST" | sed 's/^/    /'
 
-      - name: Install system deps (Linux)
+      - name: Install system deps
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq \
             libgtk-3-dev libnotify-dev libnss3 libxss1 libasound2t64 zstd
+          echo "  ✓ apt packages installed"
 
-      - name: Install system deps (Windows)
+      - name: Install system deps
         if: runner.os == 'Windows'
-        run: choco install 7zip.install -y --no-progress
+        shell: bash
+        run: |
+          choco install 7zip.install -y --no-progress
+          echo "  ✓ 7zip installed"
 
-      - name: Install upstream deps
+      - name: Install dependencies
+        shell: bash
         working-directory: upstream
         run: bun install
 
-      - name: Build
+      - name: Disable code signing
+        if: runner.os == 'Windows'
+        shell: bash
+        working-directory: upstream
+        run: |
+          cat > script/sign-windows.ps1 << 'EOF'
+          Write-Host "[onprem] skipping code signing — air-gap build"
+          exit 0
+          EOF
+          echo "  ✓ sign-windows.ps1 → no-op"
+
+      - name: Build ${{ matrix.platform }} bundle
+        shell: bash
         working-directory: upstream
         run: bun run scripts/onprem/pack.ts --platform ${{ matrix.platform }} --arch x64
 
-      - name: Collect artifacts
+      - name: Collect ${{ matrix.artifact_ext }} artifact
         shell: bash
         run: |
+          shopt -s nullglob
           mkdir -p dist
           for f in upstream/dist/*.tar.zst upstream/dist/*.7z; do
-            [ -f "$f" ] || continue
-            echo "→ $(basename "$f")"
+            echo "  → $(basename "$f")"
             cp "$f" dist/
           done
-          echo "---"
-          ls -lh dist/
+          ls -lh dist/ | sed 's/^/  /'
 
-      - name: Upload artifact
+      - name: Upload ${{ matrix.platform }} bundle
         uses: actions/upload-artifact@v4
         with:
           name: bundle-${{ matrix.platform }}-x64
@@ -154,15 +185,16 @@ jobs:
       contents: write
 
     steps:
-      - name: Download all artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist/
           merge-multiple: true
 
       - name: List artifacts
+        shell: bash
         run: |
-          echo "--- artifacts ---"
+          echo "--- release artifacts ---"
           ls -lh dist/
 
       - name: Generate release notes
@@ -185,7 +217,7 @@ jobs:
           See [OpenCode v${{ needs.vars.outputs.upstream_ver }} Release](https://github.com/anomalyco/opencode/releases/tag/v${{ needs.vars.outputs.upstream_ver }}) for detailed updates.
           EOF
 
-      - name: Publish Release
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: "OpenCode Onprem ${{ needs.vars.outputs.tag_name }}"

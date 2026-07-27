@@ -133,7 +133,9 @@ const LSP_DEFS: LspDef[] = [
     repo: "Myriad-Dreamin/tinymist",
     keywords: (p: string, a: string) => {
       const plat = p === "linux" ? "linux" : p === "darwin" ? "darwin" : "win32"
-      return ["tinymist", plat, mapArch(a)]
+      // tinymist 的 Windows 资产使用 "x64"/"arm64" 命名（如 tinymist-win32-x64.exe），
+      // 而非 Rust target triple 的 "x86_64"/"aarch64"
+      return ["tinymist", plat, p === "win32" ? a : mapArch(a)]
     },
     preferExt: [".tar.gz", ".zip"],
     binaryPath: "tinymist",
