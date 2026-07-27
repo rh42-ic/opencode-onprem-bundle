@@ -11,11 +11,44 @@ on:
         required: true
         type: string
 
+# ── vars: 解析版本号（不 checkout，纯字符串操作）────────────
 jobs:
-  build-and-release:
+  vars:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    outputs:
+      upstream_ver: ${{ steps.parse.outputs.upstream_ver }}
+      tag_name: ${{ steps.parse.outputs.tag_name }}
+    steps:
+      - name: Parse version
+        id: parse
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            UPSTREAM_VER="${{ github.event.inputs.upstream_version }}"
+            TAG_NAME="v${UPSTREAM_VER}-onprem"
+          else
+            TAG_NAME="${GITHUB_REF_NAME}"
+            UPSTREAM_VER="${TAG_NAME#v}"
+            UPSTREAM_VER="${UPSTREAM_VER%-onprem}"
+          fi
+          echo "upstream_ver=$UPSTREAM_VER" >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+
+  # ── build: matrix 构建 ─────────────────────────────────
+  build:
+    needs: vars
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            artifact_ext: tar.zst
+          - os: windows-latest
+            platform: win32
+            artifact_ext: 7z
+      # 单个平台失败不取消其余
+      fail-fast: false
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
@@ -26,32 +59,18 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Parse version
-        id: vars
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            UPSTREAM_VER="${{ github.event.inputs.upstream_version }}"
-            TAG_NAME="v${UPSTREAM_VER}-onprem"
-          else
-            TAG_NAME="${GITHUB_REF_NAME}"
-            UPSTREAM_VER="${TAG_NAME#v}"
-            UPSTREAM_VER="${UPSTREAM_VER%-onprem}"
-          fi
-          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
-          echo "UPSTREAM_VER=$UPSTREAM_VER" >> $GITHUB_ENV
-
       - name: Sync manifest version
         run: |
           node -e "
             const m = require('./manifest.json');
-            m.version = '${{ env.UPSTREAM_VER }}';
+            m.version = '${{ needs.vars.outputs.upstream_ver }}';
             require('fs').writeFileSync('./manifest.json', JSON.stringify(m, null, 2) + '\n');
           "
           echo "manifest.json: $(node -e "console.log(require('./manifest.json').version)")"
 
       - name: Download upstream
         run: |
-          UPSTREAM_VER="${{ env.UPSTREAM_VER }}"
+          UPSTREAM_VER="${{ needs.vars.outputs.upstream_ver }}"
           mkdir -p upstream
           curl -fsSL "https://github.com/anomalyco/opencode/archive/refs/tags/v${UPSTREAM_VER}.tar.gz" \
             | tar -xz -C upstream --strip-components=1
@@ -64,7 +83,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .
-          git commit -m "chore: init upstream v${{ env.UPSTREAM_VER }}"
+          git commit -m "chore: init upstream v${{ needs.vars.outputs.upstream_ver }}"
 
           for patch in ../patches/*.patch; do
             echo "→ $(basename "$patch")"
@@ -83,56 +102,94 @@ jobs:
           cp scripts/download.ts "$DST/"
           cp scripts/pack.ts    "$DST/"
           cp scripts/env.sh     "$DST/"
+          cp scripts/env.bat    "$DST/"
+          cp scripts/env.ps1    "$DST/"
           cp manifest.json      "$DST/"
           cp plugins.json       "$DST/"
           echo "✓ copied to $DST:"
           ls "$DST"
 
-      - name: Install system deps
+      - name: Install system deps (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq \
             libgtk-3-dev libnotify-dev libnss3 libxss1 libasound2t64 zstd
 
+      - name: Install system deps (Windows)
+        if: runner.os == 'Windows'
+        run: choco install 7zip.install -y --no-progress
+
       - name: Install upstream deps
         working-directory: upstream
         run: bun install
 
-      - name: Build linux-x64
+      - name: Build
         working-directory: upstream
-        run: bun run scripts/onprem/pack.ts --platform linux --arch x64
+        run: bun run scripts/onprem/pack.ts --platform ${{ matrix.platform }} --arch x64
 
       - name: Collect artifacts
+        shell: bash
         run: |
           mkdir -p dist
-          shopt -s nullglob
           for f in upstream/dist/*.tar.zst upstream/dist/*.7z; do
+            [ -f "$f" ] || continue
             echo "→ $(basename "$f")"
             cp "$f" dist/
           done
           echo "---"
           ls -lh dist/
 
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.platform }}-x64
+          path: dist/
+
+  # ── release: 汇总发布 ──────────────────────────────────
+  release:
+    needs: [vars, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: List artifacts
+        run: |
+          echo "--- artifacts ---"
+          ls -lh dist/
+
       - name: Generate release notes
         run: |
           cat <<EOF > release_body.md
-          ## opencode onprem v${{ env.UPSTREAM_VER }}
+          ## opencode onprem v${{ needs.vars.outputs.upstream_ver }}
 
-          同步更新到 v${{ env.UPSTREAM_VER }} 版本。
+          同步更新到 v${{ needs.vars.outputs.upstream_ver }} 版本。
 
-          详细更新参阅 [OpenCode v${{ env.UPSTREAM_VER }} Release](https://github.com/anomalyco/opencode/releases/tag/v${{ env.UPSTREAM_VER }})。
+          详细更新参阅 [OpenCode v${{ needs.vars.outputs.upstream_ver }} Release](https://github.com/anomalyco/opencode/releases/tag/v${{ needs.vars.outputs.upstream_ver }})。
+
+          | 平台 | 文件 |
+          |---|---|
+          | Linux x64 | opencode-onprem-v${{ needs.vars.outputs.upstream_ver }}-linux-x64.tar.zst |
+          | Windows x64 | opencode-onprem-v${{ needs.vars.outputs.upstream_ver }}-win32-x64.7z |
 
           ---
 
-          Synchronized update to version v${{ env.UPSTREAM_VER }}.
-          See [OpenCode v${{ env.UPSTREAM_VER }} Release](https://github.com/anomalyco/opencode/releases/tag/v${{ env.UPSTREAM_VER }}) for detailed updates.
+          Synchronized update to version v${{ needs.vars.outputs.upstream_ver }}.
+          See [OpenCode v${{ needs.vars.outputs.upstream_ver }} Release](https://github.com/anomalyco/opencode/releases/tag/v${{ needs.vars.outputs.upstream_ver }}) for detailed updates.
           EOF
 
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "OpenCode Onprem ${{ env.TAG_NAME }}"
-          tag_name: ${{ env.TAG_NAME }}
+          name: "OpenCode Onprem ${{ needs.vars.outputs.tag_name }}"
+          tag_name: ${{ needs.vars.outputs.tag_name }}
           body_path: release_body.md
           draft: false
           prerelease: false

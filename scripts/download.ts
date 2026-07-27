@@ -261,7 +261,7 @@ async function main() {
   console.log(`║  output:   ${outDir.padEnd(30)} ║`)
   console.log(`╚══════════════════════════════════════════╝\n`)
 
-  const stats = { wasm: 0, queries: 0, rg: 0, lsp: 0, npm: 0, plugins: 0 }
+  const stats = { wasm: 0, queries: 0, rg: 0, lsp: 0, npm: 0, shim: 0, plugins: 0 }
 
   // ── 1. tree-sitter wasm + queries ──────────────────────
   console.log("📦 [1/5] Downloading tree-sitter resources...\n")
@@ -495,6 +495,48 @@ async function main() {
   // Cleanup temp
   fs.rmSync(tmpDir, { recursive: true, force: true })
 
+  // ── 5. shim.exe (Windows only) ─────────────────────────
+  if (platform === "win32") {
+    console.log("\n📦 [6/6] Downloading shim.exe (ScoopInstaller/Shim)...\n")
+
+    const shimVersion = "cpp/v0.1.1"
+    const shimArch = arch === "arm64" ? "arm64" : "x64"
+    const shimUrl = `https://github.com/ScoopInstaller/Shim/releases/download/${shimVersion}/shim-${shimArch}.zip`
+    const shimDir = path.join(outDir, "shim-tmp")
+
+    if (!fs.existsSync(path.join(outDir, "shim.exe"))) {
+      try {
+        const shimZip = path.join(shimDir, "shim.zip")
+        await download(shimUrl, shimZip)
+        await extractArchive(shimZip, shimDir)
+        // Find shim.exe and move to assets root
+        const findShim = (dir: string): string | undefined => {
+          for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+            const full = path.join(dir, entry.name)
+            if (entry.isFile() && entry.name === "shim.exe") return full
+            if (entry.isDirectory()) {
+              const found = findShim(full)
+              if (found) return found
+            }
+          }
+          return undefined
+        }
+        const shimExe = findShim(shimDir)
+        if (shimExe) {
+          fs.renameSync(shimExe, path.join(outDir, "shim.exe"))
+        }
+        fs.rmSync(shimDir, { recursive: true, force: true })
+        stats.shim++
+        console.log("  ✓ shim.exe")
+      } catch (e: any) {
+        console.log(`  ✗ shim.exe: ${e.message}`)
+      }
+    } else {
+      console.log("  ✓ shim.exe (cached)")
+      stats.shim++
+    }
+  }
+
   // ── stats ───────────────────────────────────────────────
   console.log(`\n╔══════════════════════════════════════════╗`)
   console.log(`║  Download complete                       ║`)
@@ -503,6 +545,7 @@ async function main() {
   console.log(`║  ripgrep:             ${String(stats.rg).padEnd(3)}               ║`)
   console.log(`║  LSP binaries:        ${String(stats.lsp).padEnd(3)}               ║`)
   console.log(`║  npm packages:        ${String(stats.npm).padEnd(3)}               ║`)
+  console.log(`║  shim.exe (Win only): ${String(stats.shim).padEnd(3)}               ║`)
   console.log(`╚══════════════════════════════════════════╝\n`)
 }
 

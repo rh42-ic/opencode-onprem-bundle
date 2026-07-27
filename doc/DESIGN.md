@@ -151,7 +151,8 @@ const which = Effect.fn("Npm.which")(function* (pkg: string, bin?: string) {
 
 ```
 opencode-onprem-v1.18.5-linux-x64/
-├── bin/
+├── bin/                               # Linux/macOS: symlink → assets 中工具
+│   │                                   # Windows:    shim.exe 副本 + .shim 配置
 │   ├── opencode                      # CLI standalone binary (bun build --single)
 │   ├── rg                            # symlink → ../assets/rg/rg
 │   ├── rust-analyzer                 # symlink → ../assets/lsp/rust-analyzer
@@ -204,6 +205,8 @@ opencode-onprem-v1.18.5-linux-x64/
 │   │   ├── texlab
 │   │   └── tinymist
 │   │
+│   ├── shim.exe                       # ScoopInstaller/Shim (Windows 工具转发)
+│   │
 │   └── npm/                          # npm 包缓存
 │       ├── typescript-language-server/
 │       │   └── node_modules/...
@@ -211,7 +214,9 @@ opencode-onprem-v1.18.5-linux-x64/
 │       │   └── node_modules/...
 │       └── ...（12 个 npm 包 + plugins.json 中的额外插件）
 │
-└── env.sh
+├── env.sh
+├── env.bat                          # Windows CMD 环境脚本
+└── env.ps1                          # Windows PowerShell 环境脚本
 ```
 
 ---
@@ -270,7 +275,9 @@ opencode-onprem-v1.18.5-linux-x64/
 
 ---
 
-## `env.sh` 设计
+## `env.sh` / `env.bat` / `env.ps1` 设计
+
+### Linux / macOS: `env.sh`
 
 ```bash
 #!/usr/bin/env bash
@@ -287,6 +294,28 @@ echo "[opencode onprem] loaded from $OPENCODE_ONPREM_DIR"
 ```
 
 用户只需 `source env.sh`，所有 ENV 和 PATH 即就绪。
+
+### Windows: `env.bat` + `env.ps1`
+
+Windows 上使用 [ScoopInstaller/Shim](https://github.com/ScoopInstaller/Shim) 方案替代 symlink。
+
+**原理**：
+- 构建时：`pack.ts` 为每个工具生成 `<tool>.shim` 配置文件 + 复制 `shim.exe` → `bin/<tool>.exe`
+- `.shim` 格式：`path = "%OPENCODE_ONPREM_DIR%\assets\<tool-path>"`
+- 运行时：用户运行 `bin/rg.exe` → shim 读取 `rg.shim` → 启动真实 `assets/rg/rg.exe`
+- `OPENCODE_ONPREM_DIR` 由 env 脚本设置，保证 shim 能在任意解压位置工作
+
+**CMD 用法**: `call env.bat`
+**PowerShell 用法**: `. .\env.ps1`
+
+env 脚本只需做两件事：
+1. 设置 `OPENCODE_ONPREM_DIR` 为 bundle 根目录
+2. `bin/` 加入 `PATH`
+3. 设置 `OPENCODE_DISABLE_*` 环境变量
+
+不再扫描 assets 子目录。所有工具通过 `bin/` 下的 shim 发现，PATH 保持干净。
+
+**shim 来源**：`download.ts` 在 Windows 上自动从 [ScoopInstaller/Shim releases](https://github.com/ScoopInstaller/Shim/releases) 下载 C++ 版本（~155KB，零运行时依赖）。
 
 ---
 
@@ -348,10 +377,12 @@ bun run scripts/onprem/pack.ts \
 
    **阶段 C — 共享资源 + 打包**:
 10. 调用 `download.ts --out ./dist/<bundle>/assets` → 预下载 wasm/queries/LSP/rg/npm
-11. 在 `bin/` 下创建所有相对路径 soft links
-12. 生成 `env.sh`（含 `OPENCODE_ONPREM_DIR`、`OPENCODE_DISABLE_*` 等）
-13. 打包: Linux/macOS → `tar --zstd -cf ...`，Windows → `7z a ...`
-14. 输出 `opencode-onprem-v1.18.5-linux-x64.tar.zst`
+11. 创建 `bin/` 下工具入口:
+    - Linux/macOS: 创建相对路径 soft links → `assets/` 中对应工具
+    - Windows: 生成 Scoop-style shim — 每个工具 `bin/<tool>.exe`（shim.exe 副本）+ `<tool>.shim`（含 `%OPENCODE_ONPREM_DIR%` 路径）
+12. 复制 `env.sh`（含 `OPENCODE_ONPREM_DIR`、`OPENCODE_DISABLE_*` 等）+ `env.bat` + `env.ps1` 到 bundle 根目录
+13. 打包: Linux/macOS → `tar --zstd -cf ...`，Windows → `7z a -tzstd ...`
+14. 输出 `opencode-onprem-v1.18.5-linux-x64.tar.zst`（Windows 为 `.7z`）
 
 ---
 

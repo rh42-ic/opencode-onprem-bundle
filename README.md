@@ -93,14 +93,6 @@ cp ../opencode-onprem-bundle/scripts/env.sh scripts/onprem/
 bun run scripts/onprem/pack.ts --platform linux --arch x64
 ```
 
-## 支持的平台
-
-| 平台 | 架构 |
-|---|---|
-| linux | x64 / arm64 |
-| darwin (macOS) | x64 / arm64 |
-| win32 (Windows) | x64 / arm64 |
-
 ## 未捆绑的工具
 
 以下工具需用户在 air-gap 环境中自行提供：
@@ -110,7 +102,7 @@ bun run scripts/onprem/pack.ts --platform linux --arch x64
 | gopls | Go | 需完整 Go 工具链 |
 | rubocop | Ruby | 需完整 Ruby 环境 |
 | csharp-ls | C# | 需 .NET SDK |
-| eslint | JS/TS | 编译环境过于复杂 |
+| eslint | JS/TS | 暂无 |
 | mix compile | Elixir | 需完整 Elixir 环境 |
 
 ## License

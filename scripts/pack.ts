@@ -78,7 +78,7 @@ async function buildCli(bundleDir: string, version: string) {
 
   const binaryName = platform === "win32" ? "opencode.exe" : "opencode"
   const binSrc = path.join(distDir, buildDir.name, "bin", binaryName)
-  const binDest = path.join(bundleDir, "bin", "opencode")
+  const binDest = path.join(bundleDir, "bin", binaryName)
 
   if (!dryRun) {
     fs.mkdirSync(path.dirname(binDest), { recursive: true })
@@ -175,7 +175,13 @@ async function buildDesktop(bundleDir: string, version: string) {
   console.log(`  ✓ Desktop: ${destDir}\n`)
 }
 
-async function createSymlinks(bundleDir: string) {
+async function createSymlinks(bundleDir: string, platform: string) {
+  if (platform === "win32") {
+    console.log("🔗 Windows: creating Scoop-style shims...\n")
+    await createShims(bundleDir)
+    return
+  }
+
   console.log("🔗 Creating symlinks...\n")
   const binDir = path.join(bundleDir, "bin")
 
@@ -209,6 +215,71 @@ async function createSymlinks(bundleDir: string) {
       fs.symlinkSync(target, linkPath)
     }
     console.log(`  ${name} → ${target}`)
+  }
+}
+
+/** Windows: Scoop-style shims — 每个工具一个 .shim 配置 + shim.exe 副本 */
+async function createShims(bundleDir: string) {
+  const binDir = path.join(bundleDir, "bin")
+  const shimExeSrc = path.join(bundleDir, "assets", "shim.exe")
+
+  if (!fs.existsSync(shimExeSrc)) {
+    console.log("  ⚠ shim.exe not found in assets/, skipping shim creation\n")
+    return
+  }
+
+  // name → relative path from bundle root (Windows separators, no extension)
+  const native = [
+    { name: "rg", path: "assets\\rg\\rg" },
+    { name: "rust-analyzer", path: "assets\\lsp\\rust-analyzer\\rust-analyzer" },
+    { name: "clangd", path: "assets\\lsp\\clangd\\bin\\clangd" },
+    { name: "zls", path: "assets\\lsp\\zls\\zls" },
+    { name: "lua-language-server", path: "assets\\lsp\\lua-ls\\bin\\lua-language-server" },
+    { name: "terraform-ls", path: "assets\\lsp\\terraform-ls\\terraform-ls" },
+    { name: "texlab", path: "assets\\lsp\\texlab\\texlab" },
+    { name: "tinymist", path: "assets\\lsp\\tinymist\\tinymist" },
+  ]
+
+  const npm = [
+    { name: "typescript-language-server", path: "assets\\npm\\typescript-language-server\\node_modules\\.bin\\typescript-language-server" },
+    { name: "vue-language-server", path: "assets\\npm\\@vue+language-server\\node_modules\\.bin\\vue-language-server" },
+    { name: "pyright-langserver", path: "assets\\npm\\pyright\\node_modules\\.bin\\pyright-langserver" },
+    { name: "svelteserver", path: "assets\\npm\\svelte-language-server\\node_modules\\.bin\\svelteserver" },
+    { name: "astro-ls", path: "assets\\npm\\@astrojs+language-server\\node_modules\\.bin\\astro-ls" },
+    { name: "yaml-language-server", path: "assets\\npm\\yaml-language-server\\node_modules\\.bin\\yaml-language-server" },
+    { name: "bash-language-server", path: "assets\\npm\\bash-language-server\\node_modules\\.bin\\bash-language-server" },
+    { name: "docker-langserver", path: "assets\\npm\\dockerfile-language-server-nodejs\\node_modules\\.bin\\docker-langserver" },
+    { name: "intelephense", path: "assets\\npm\\intelephense\\node_modules\\.bin\\intelephense" },
+    { name: "biome", path: "assets\\npm\\biome\\node_modules\\.bin\\biome" },
+    { name: "prettier", path: "assets\\npm\\prettier\\node_modules\\.bin\\prettier" },
+  ]
+
+  for (const tool of [...native, ...npm]) {
+    // Resolve actual file: native may be <name> or <name>.exe; npm must be <name>.cmd
+    let relPath: string
+    if (npm.includes(tool)) {
+      relPath = tool.path + ".cmd"
+    } else {
+      const absBase = path.join(bundleDir, tool.path)
+      if (fs.existsSync(absBase + ".exe")) {
+        relPath = tool.path + ".exe"
+      } else if (fs.existsSync(absBase)) {
+        relPath = tool.path
+      } else {
+        // Fallback: try .exe (most common)
+        relPath = tool.path + ".exe"
+      }
+    }
+
+    const shimCfg = `path = "%OPENCODE_ONPREM_DIR%\\${relPath}"\n`
+    const shimExeDest = path.join(binDir, tool.name + ".exe")
+    const shimCfgDest = path.join(binDir, tool.name + ".shim")
+
+    if (!dryRun) {
+      fs.copyFileSync(shimExeSrc, shimExeDest)
+      fs.writeFileSync(shimCfgDest, shimCfg)
+    }
+    console.log(`  ${tool.name}.exe → ${relPath}`)
   }
 }
 
@@ -260,15 +331,20 @@ async function main() {
   }
 
   // ── Create symlinks ──────────────────────────────────
-  await createSymlinks(bundleDir)
+  await createSymlinks(bundleDir, platform)
 
-  // ── Copy env.sh ──────────────────────────────────────
-  const envSrc = path.join(__dirname, "env.sh")
-  const envDest = path.join(bundleDir, "env.sh")
-  if (!dryRun) {
-    fs.copyFileSync(envSrc, envDest)
+  // ── Copy env scripts ────────────────────────────────
+  for (const name of ["env.sh", "env.bat", "env.ps1"]) {
+    const envSrc = path.join(__dirname, name)
+    const envDest = path.join(bundleDir, name)
+    if (!dryRun) {
+      if (fs.existsSync(envSrc)) {
+        fs.copyFileSync(envSrc, envDest)
+        console.log(`  ✓ ${name}`)
+      }
+    }
   }
-  console.log(`\n📋 Copied env.sh to bundle\n`)
+  console.log(`\n📋 Copied env scripts to bundle\n`)
 
   // ── Package ──────────────────────────────────────────
   console.log("📦 Packaging...")
