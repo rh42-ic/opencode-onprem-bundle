@@ -158,6 +158,8 @@ jobs:
       - name: Build ${{ matrix.platform }} bundle
         shell: bash
         working-directory: upstream
+        env:
+          OPENCODE_CHANNEL: prod
         run: bun run scripts/onprem/pack.ts --platform ${{ matrix.platform }} --arch x64
 
       - name: Collect ${{ matrix.artifact_ext }} artifact

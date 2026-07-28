@@ -36,8 +36,8 @@
   "build": {
     "cli_entry": "packages/opencode",
     "cli_build_cmd": "bun run build --single",
-    "desktop_prebuild_cmd": "OPENCODE_CHANNEL=dev bun run prebuild",
-    "desktop_build_cmd": "OPENCODE_CHANNEL=dev bun run build",
+    "desktop_prebuild_cmd": "bun run prebuild",
+    "desktop_build_cmd": "bun run build",
     "desktop_package_cmd": "npx electron-builder --linux --dir --config electron-builder.config.ts"
   }
 }

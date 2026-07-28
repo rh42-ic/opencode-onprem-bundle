@@ -93,7 +93,7 @@ async function buildCli(bundleDir: string, version: string) {
 
 async function buildDesktop(bundleDir: string, version: string) {
   console.log("🔨 Phase B: Building Desktop...\n")
-  const buildEnv = { ...process.env, OPENCODE_VERSION: version, OPENCODE_CHANNEL: "dev" }
+  const buildEnv = { ...process.env, OPENCODE_VERSION: version }
 
   // Step 1: Build opencode node bundle
   console.log("  [1/4] Building opencode node bundle...")
