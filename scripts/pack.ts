@@ -11,6 +11,7 @@
  */
 
 import { $ } from "bun"
+import { execSync } from "child_process"
 import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
@@ -271,6 +272,45 @@ async function createShims(bundleDir: string) {
   }
 }
 
+/** 收集 bundle 内文件，按扩展名/MIME 排序以提升 zstd 压缩率 */
+function buildSortedFileList(bundleDir: string, bundleName: string): string {
+  const glob = new Bun.Glob("**/*")
+  const entries = Array.from(glob.scanSync({ cwd: bundleDir, onlyFiles: false, dot: true }))
+
+  const getExt = (f: string): string => {
+    const m = path.basename(f).match(/(?<=.)\.([^./\\]+)(?:\.\d+)*$/)
+    return m && !/^\d+$/.test(m[1]) ? "." + m[1].toLowerCase() : ""
+  }
+
+  // 无扩展名文件用 file 命令探测 MIME，同类文件聚在一起
+  const noExtFiles = entries.filter((e) => !getExt(e))
+  const mimeMap = new Map<string, string>()
+  if (noExtFiles.length > 0) {
+    console.log(`  Detecting MIME for ${noExtFiles.length} extensionless files...`)
+    try {
+      const tmpList = path.join(path.dirname(bundleDir), `.${bundleName}.mime`)
+      fs.writeFileSync(tmpList, noExtFiles.map((e) => path.join(bundleDir, e)).join("\0"))
+      const out = execSync(`xargs -0 file -b --mime-type < "${tmpList}"`, {
+        maxBuffer: 10 * 1024 * 1024,
+      })
+      out.toString().trim().split("\n").forEach((mime, i) => mimeMap.set(noExtFiles[i], mime))
+      fs.unlinkSync(tmpList)
+    } catch {
+      console.log("  ⚠ file command unavailable, skipping MIME detection")
+    }
+  }
+
+  entries.sort((a, b) => {
+    const tA = getExt(a) || mimeMap.get(a) || ""
+    const tB = getExt(b) || mimeMap.get(b) || ""
+    return tA !== tB ? tA.localeCompare(tB) : a.localeCompare(b)
+  })
+
+  // 首行空串 = tar 约定：包含目录本身
+  entries.unshift("")
+  return entries.map((e) => path.join(bundleName, e)).join("\n")
+}
+
 // ── main ──────────────────────────────────────────────────
 async function main() {
   const manifest = readManifest()
@@ -346,8 +386,13 @@ async function main() {
       // Windows: 标准 7z（LZMA2），任何 7-Zip/WinRAR 均可打开
       await $`7z a ${archivePath} ${bundleDir}`.cwd(path.join(rootDir, "dist")).quiet()
     } else {
-      // Linux/macOS: tar 归档 + zstd 压缩
-      await $`tar --zstd -cf ${archivePath} -C ${path.join(rootDir, "dist")} ${bundleName}`.quiet()
+      // Linux/macOS: 按类型排序后 tar + zstd 最高压缩（级别 19，全核）
+      const listPath = path.join(rootDir, "dist", `.${bundleName}.list`)
+      const fileList = buildSortedFileList(bundleDir, bundleName)
+      fs.writeFileSync(listPath, fileList)
+      const zstdCompress = "zstd -19 -T0 --long"
+      await $`tar --no-recursion --checkpoint=1000 --checkpoint-action=dot -I ${zstdCompress} -cf ${archivePath} -T ${listPath}`.cwd(path.join(rootDir, "dist"))
+      fs.unlinkSync(listPath)
     }
   }
 
