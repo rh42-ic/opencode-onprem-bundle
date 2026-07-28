@@ -1,0 +1,14 @@
+diff --git a/package.json b/package.json
+index 662f9a4..31161a8 100644
+--- a/package.json
++++ b/package.json
+@@ -106,7 +106,8 @@
+     "prettier": "3.6.2",
+     "semver": "^7.6.0",
+     "sst": "catalog:",
+-    "turbo": "2.10.2"
++    "turbo": "2.10.2",
++    "file-type": "^20.4.1"
+   },
+   "dependencies": {
+     "@aws-sdk/client-s3": "3.933.0",

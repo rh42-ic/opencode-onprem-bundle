@@ -11,10 +11,10 @@
  */
 
 import { $ } from "bun"
-import { execSync } from "child_process"
 import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
+import { fileTypeFromFile } from "file-type"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(__dirname, "..", "..")
@@ -273,7 +273,7 @@ async function createShims(bundleDir: string) {
 }
 
 /** 收集 bundle 内文件，按扩展名/MIME 排序以提升 zstd 压缩率 */
-function buildSortedFileList(bundleDir: string, bundleName: string): string {
+async function buildSortedFileList(bundleDir: string, bundleName: string): Promise<string> {
   const glob = new Bun.Glob("**/*")
   const entries = Array.from(glob.scanSync({ cwd: bundleDir, onlyFiles: false, dot: true }))
 
@@ -282,21 +282,25 @@ function buildSortedFileList(bundleDir: string, bundleName: string): string {
     return m && !/^\d+$/.test(m[1]) ? "." + m[1].toLowerCase() : ""
   }
 
-  // 无扩展名文件用 file 命令探测 MIME，同类文件聚在一起
+  // 无扩展名文件用 file-type read-chunk (Magic Bytes) 探测 MIME，同类文件聚在一起
   const noExtFiles = entries.filter((e) => !getExt(e))
   const mimeMap = new Map<string, string>()
   if (noExtFiles.length > 0) {
     console.log(`  Detecting MIME for ${noExtFiles.length} extensionless files...`)
-    try {
-      const tmpList = path.join(path.dirname(bundleDir), `.${bundleName}.mime`)
-      fs.writeFileSync(tmpList, noExtFiles.map((e) => path.join(bundleDir, e)).join("\0"))
-      const out = execSync(`xargs -0 file -b --mime-type < "${tmpList}"`, {
-        maxBuffer: 10 * 1024 * 1024,
-      })
-      out.toString().trim().split("\n").forEach((mime, i) => mimeMap.set(noExtFiles[i], mime))
-      fs.unlinkSync(tmpList)
-    } catch {
-      console.log("  ⚠ file command unavailable, skipping MIME detection")
+    const BATCH = 32
+    for (let i = 0; i < noExtFiles.length; i += BATCH) {
+      const batch = noExtFiles.slice(i, i + BATCH)
+      const results = await Promise.all(
+        batch.map(async (f) => {
+          try {
+            const r = await fileTypeFromFile(path.join(bundleDir, f))
+            return r?.mime ?? ""
+          } catch {
+            return ""
+          }
+        }),
+      )
+      batch.forEach((f, j) => mimeMap.set(f, results[j]))
     }
   }
 
@@ -388,7 +392,7 @@ async function main() {
     } else {
       // Linux/macOS: 按类型排序后 tar + zstd 最高压缩（级别 19，全核）
       const listPath = path.join(rootDir, "dist", `.${bundleName}.list`)
-      const fileList = buildSortedFileList(bundleDir, bundleName)
+      const fileList = await buildSortedFileList(bundleDir, bundleName)
       fs.writeFileSync(listPath, fileList)
       const zstdCompress = "zstd -19 -T0 --long"
       await $`tar --no-recursion --checkpoint=1000 --checkpoint-action=dot -I ${zstdCompress} -cf ${archivePath} -T ${listPath}`.cwd(path.join(rootDir, "dist"))
