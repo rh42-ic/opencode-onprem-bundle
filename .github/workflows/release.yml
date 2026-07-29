@@ -142,7 +142,7 @@ jobs:
       - name: Install dependencies
         shell: bash
         working-directory: upstream
-        run: bun install
+        run: bun install || bun install
 
       - name: Build ${{ matrix.platform }} bundle
         shell: bash
