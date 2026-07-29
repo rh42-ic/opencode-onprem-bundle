@@ -144,17 +144,6 @@ jobs:
         working-directory: upstream
         run: bun install
 
-      - name: Disable code signing
-        if: runner.os == 'Windows'
-        shell: bash
-        working-directory: upstream
-        run: |
-          cat > script/sign-windows.ps1 << 'EOF'
-          Write-Host "[onprem] skipping code signing — air-gap build"
-          exit 0
-          EOF
-          echo "  ✓ sign-windows.ps1 → no-op"
-
       - name: Build ${{ matrix.platform }} bundle
         shell: bash
         working-directory: upstream

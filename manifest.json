@@ -17,6 +17,11 @@
       "file": "002-npm-onprem-gate.patch",
       "target": "packages/core/src/npm.ts",
       "description": "新增 findPackageDir() 函数（用 npa 解析 git URL/@latest 等格式提取包名），onprem 模式下阻断 npm 网络安装"
+    },
+    {
+      "file": "003-file-type-deps.patch",
+      "target": "package.json",
+      "description": "添加 file-type devDependency，用于打包时 MIME 探测"
     }
   ],
   "assets": {

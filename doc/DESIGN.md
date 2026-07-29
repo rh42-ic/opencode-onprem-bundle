@@ -2,7 +2,7 @@
 
 ## 目标
 
-将 opencode 打包为自包含的离线 bundle，同时包含 CLI 和 Desktop 版本。用户在 air-gap 环境中 `source env.sh` 即可使用，无需任何网络访问。
+将 opencode 打包为自包含的离线 bundle，包含 CLI 版本。用户在 air-gap 环境中 `source env.sh` 即可使用，无需任何网络访问。
 
 ## 工程结构
 
@@ -14,7 +14,8 @@ opencode-dev/
 │   ├── manifest.json                 # 版本/兼容性声明
 │   ├── patches/
 │   │   ├── 001-parsers-config.patch  # 修改 parsers-config.ts
-│   │   └── 002-npm-onprem-gate.patch # 修改 npm.ts
+│   │   ├── 002-npm-onprem-gate.patch # 修改 npm.ts
+│   │   └── 003-file-type-deps.patch  # 修改 package.json
 │   ├── scripts/
 │   │   ├── download.ts               # 预下载脚本
 │   │   ├── pack.ts                   # 编译 + 打包脚本
@@ -22,7 +23,7 @@ opencode-dev/
 │   ├── src/                          # 附加源码（runtime 补丁）
 │   │   └── onprem-gate.ts            # onprem 门禁逻辑
 │   └── plugins.json                  # 额外插件声明
-└── opencode-1.18.8/                  # upstream（用于开发和测试）
+└── opencode-1.18.9/                  # upstream（用于开发和测试）
 ```
 
 ### 工作流
@@ -32,7 +33,7 @@ opencode-dev/
 2. git diff 生成 patch → 覆盖 patches/
 3. cp scripts/* → upstream/scripts/onprem/
 4. 在 upstream 中运行 bun run scripts/onprem/pack.ts
-5. 输出 opencode-onprem-v1.18.8-linux-x64.tar.zst（含 CLI + Desktop）
+5. 输出 opencode-onprem-v1.18.9-linux-x64.tar.zst（仅 CLI）
 ```
 
 ---
@@ -150,7 +151,7 @@ const which = Effect.fn("Npm.which")(function* (pkg: string, bin?: string) {
 ## Bundle 目录结构
 
 ```
-opencode-onprem-v1.18.8-linux-x64/
+opencode-onprem-v1.18.9-linux-x64/
 ├── bin/                               # Linux/macOS: symlink → assets 中工具
 │   │                                   # Windows:    shim.exe 副本 + .shim 配置
 │   ├── opencode                      # CLI standalone binary (bun build --single)
@@ -175,16 +176,6 @@ opencode-onprem-v1.18.8-linux-x64/
 │   ├── prettier                      # symlink → ../assets/npm/prettier/node_modules/.bin/...
 │   └── biome (formatter)             # symlink → ../assets/npm/@biomejs/biome/node_modules/.bin/...
 │
-├── desktop/                          # Electron unpacked (--dir 产物，解压即运行)
-│   ├── opencode-desktop              # Desktop 可执行入口 (Linux)
-│   │   (或 OpenCode Dev.app/         # macOS .app bundle)
-│   │   (或 opencode-desktop.exe      # Windows)
-│   ├── resources/
-│   │   ├── app.asar                  # Electron 主进程 + renderer (含 opencode node bundle)
-│   │   └── native/                   # 原生模块 (mac_window.node 等)
-│   ├── locales/
-│   └── ...                           # chrome-sandbox, crashpad handler 等
-│
 ├── assets/
 │   ├── tree-sitter/
 │   │   ├── wasm/                     # 29 个 .wasm 文件
@@ -207,12 +198,15 @@ opencode-onprem-v1.18.8-linux-x64/
 │   │
 │   ├── shim.exe                       # ScoopInstaller/Shim (Windows 工具转发)
 │   │
-│   └── npm/                          # npm 包缓存
-│       ├── typescript-language-server/
-│       │   └── node_modules/...
-│       ├── pyright/
-│       │   └── node_modules/...
-│       └── ...（12 个 npm 包 + plugins.json 中的额外插件）
+│   ├── npm/                          # npm 包缓存
+│   │       ├── typescript-language-server/
+│   │       │   └── node_modules/...
+│   │       ├── pyright/
+│   │       │   └── node_modules/...
+│   │       └── ...（12 个 npm 包 + plugins.json 中的额外插件）
+│   │
+│   └── models/                       # models.dev catalog（离线 model 配置）
+│       └── models.json
 │
 ├── env.sh
 ├── env.bat                          # Windows CMD 环境脚本
@@ -283,12 +277,11 @@ opencode-onprem-v1.18.8-linux-x64/
 #!/usr/bin/env bash
 export OPENCODE_ONPREM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PATH="$OPENCODE_ONPREM_DIR/bin:$PATH"
-# 可选：将 desktop 可执行文件也加入 PATH
-# export PATH="$OPENCODE_ONPREM_DIR/desktop:$PATH"
 
 export OPENCODE_DISABLE_AUTOUPDATE=true
 export OPENCODE_DISABLE_MODELS_FETCH=true
 export OPENCODE_DISABLE_LSP_DOWNLOAD=true
+export OPENCODE_MODELS_PATH="$OPENCODE_ONPREM_DIR/assets/models/models.json"
 
 echo "[opencode onprem] loaded from $OPENCODE_ONPREM_DIR"
 ```
@@ -339,7 +332,8 @@ bun run scripts/onprem/download.ts \
 5. 下载 GitHub Releases LSP → `<out>/lsp/<name>/`
 6. 逐个 npm 包：创建临时目录 → `bun add <pkg>` → 拷贝 `node_modules` → `<out>/npm/<pkg>/node_modules/`
 7. 读取 `plugins.json`，对每个插件执行步骤 6
-8. 输出下载统计
+8. 下载 models.dev catalog → `<out>/models/models.json`
+9. 输出下载统计
 
 ---
 
@@ -363,26 +357,14 @@ bun run scripts/onprem/pack.ts \
 4. `cd packages/opencode && bun run build --single` → 编译 standalone binary
 5. 复制编译产物 → `dist/<bundle>/bin/opencode`
 
-   **阶段 B — Desktop 构建**:
-6. `cd packages/opencode && bun script/build-node.ts` → 编译 opencode node bundle (`dist/node/node.js`)
-7. `cd packages/app && bun run build` → 编译前端 SPA (`dist/`)
-8. `cd packages/desktop`
-   a. `OPENCODE_CHANNEL=dev bun run prebuild` → copy icons + metainfo, 构建 opencode node (复用步骤 6)
-   b. `OPENCODE_CHANNEL=dev bun run build` → electron-vite 构建 main/preload/renderer
-   c. `npx electron-builder --linux --dir --config electron-builder.config.ts` (或 --mac/--win)
-      → `dist/linux-unpacked/` (或 `dist/mac/`、`dist/win-unpacked/`)
-      - macOS: 设 `CSC_IDENTITY_AUTO_DISCOVERY=false` 跳过签名/公证
-      - Windows: `signWindows` 仅在 `GITHUB_ACTIONS=true` 时触发, 本地构建自动跳过
-9. 复制 electron-builder --dir 产物 → `dist/<bundle>/desktop/`
-
-   **阶段 C — 共享资源 + 打包**:
-10. 调用 `download.ts --out ./dist/<bundle>/assets` → 预下载 wasm/queries/LSP/rg/npm
-11. 创建 `bin/` 下工具入口:
+   **阶段 B — 共享资源 + 打包**:
+6. 调用 `download.ts --out ./dist/<bundle>/assets` → 预下载 wasm/queries/LSP/rg/npm/models
+7. 创建 `bin/` 下工具入口:
     - Linux/macOS: 创建相对路径 soft links → `assets/` 中对应工具
     - Windows: 生成 Scoop-style shim — 每个工具 `bin/<tool>.exe`（shim.exe 副本）+ `<tool>.shim`（含 `%OPENCODE_ONPREM_DIR%` 路径）
-12. 复制 `env.sh`（含 `OPENCODE_ONPREM_DIR`、`OPENCODE_DISABLE_*` 等）+ `env.bat` + `env.ps1` 到 bundle 根目录
-13. 打包: Linux/macOS → `tar --zstd -cf ...`，Windows → `7z a -tzstd ...`
-14. 输出 `opencode-onprem-v1.18.8-linux-x64.tar.zst`（Windows 为 `.7z`）
+8. 复制平台对应的 env 脚本（Linux/macOS → `env.sh`，Windows → `env.bat` + `env.ps1`）到 bundle 根目录
+9. 打包: Linux/macOS → `tar --zstd -cf ...`，Windows → `7z a -tzstd ...`
+10. 输出 `opencode-onprem-v<version>-<platform>-<arch>.tar.zst`（Windows 为 `.7z`）
 
 ---
 
@@ -406,32 +388,6 @@ bun run scripts/onprem/pack.ts \
 - **不碰 `~/.cache/`**: 不在用户 home 目录创建任何文件或链接
 - **bundle 内部只用相对路径软链接**: `bin/foo → ../assets/lsp/foo` 自包含，安全
 - **npm 包加载不依赖软链接**: `findPackageDir()` 直接从 onprem 目录读，不影响 `~/.cache/opencode/packages/`
-
----
-
-## Desktop 运行时说明
-
-Desktop 版通过 Electron + Sidecar 架构运行，sidecar 是一个 `utilityProcess`，内部加载 opencode 的 Node.js bundle（`app.asar` 中）。
-
-**启动方式**:
-
-```bash
-source env.sh
-./desktop/opencode-desktop           # Linux
-open ./desktop/OpenCode\ Dev.app     # macOS
-./desktop/opencode-desktop.exe       # Windows
-```
-
-**assets 发现**: Desktop sidecar 继承 `source env.sh` 设置的环境变量（含 `OPENCODE_ONPREM_DIR`），因此能正常找到 bundle 内的 wasm/queries/LSP/npm 资源。**必须从终端 `source env.sh` 后启动**，直接双击可执行文件会因缺少 `OPENCODE_ONPREM_DIR` 而无法找到离线资源。
-
-**不会触发的外部网络请求（运行时）**:
-
-| 行为 | 状态 |
-|---|---|
-| 自动更新 (`electron-updater`) | 异步执行，失败静默忽略 |
-| Sentry 错误上报 | DSN 在构建时注入，发送失败静默丢弃 |
-| Desktop 通知图标 (`opencode.ai/favicon`) | 离线 404，不影响功能 |
-| CLI Web UI (`localhost:4096`) | 内嵌资源从 bunfs 读取，离线可用 |
 
 ---
 

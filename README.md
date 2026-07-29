@@ -1,6 +1,6 @@
 # opencode-onprem-bundle
 
-将 [opencode](https://github.com/anomalyco/opencode) 打包为自包含的离线 bundle，同时包含 CLI 和 Desktop 版本。
+将 [opencode](https://github.com/anomalyco/opencode) 打包为自包含的离线 bundle，包含 CLI 版本。
 
 用户在 air-gap 环境中 `source env.sh` 即可使用，无需任何网络访问。
 
@@ -43,8 +43,6 @@ opencode-onprem-v1.18.9-linux-x64/
 │   ├── intelephense                  # PHP LSP
 │   ├── biome                         # Biome (LSP + Formatter)
 │   └── prettier                      # Formatter
-├── desktop/                          # Electron Desktop 应用
-│   └── opencode-desktop              # Desktop 入口
 ├── assets/
 │   ├── tree-sitter/                  # 语法高亮 (31 种语言)
 │   │   ├── wasm/                     # .wasm 解析器
@@ -67,15 +65,6 @@ opencode-onprem-v1.18.9-linux-x64/
 | `OPENCODE_DISABLE_MODELS_FETCH` | 禁用模型列表远程获取 |
 | `OPENCODE_DISABLE_LSP_DOWNLOAD` | 禁用 LSP 自动下载 |
 | `OPENCODE_MODELS_PATH` | 预下载的 models catalog JSON 文件路径（自动指向 assets/models/models.json） |
-
-## Desktop 启动
-
-**必须从终端 `source env.sh` 后启动**，直接双击可执行文件会因缺少 `OPENCODE_ONPREM_DIR` 而无法找到离线资源。
-
-```bash
-source env.sh
-./desktop/opencode-desktop
-```
 
 ## 构建 bundle
 

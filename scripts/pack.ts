@@ -6,8 +6,12 @@
  * 用法:
  *   bun run scripts/onprem/pack.ts --platform linux --arch x64
  *
+ *   可选:
+ *   --desktop   编译 Desktop (Electron) 版本（默认跳过）
+ *   --dry-run   仅模拟，不执行实际构建
+ *
  * 输出:
- *   dist/opencode-onprem-v<version>-<platform>-<arch>.tar.zst
+ *   dist/opencode-onprem-v<version>-<platform>-<arch>.tar.zst (或 .7z)
  */
 
 import { $ } from "bun"
@@ -30,6 +34,7 @@ function getArg(name: string): string | undefined {
 const platform = getArg("platform") ?? process.platform
 const arch = getArg("arch") ?? process.arch
 const dryRun = args.includes("--dry-run")
+const withDesktop = args.includes("--desktop")
 
 // ── helpers ───────────────────────────────────────────────
 function readManifest() {
@@ -349,8 +354,12 @@ async function main() {
   // ── Phase A: Build CLI ────────────────────────────────
   await buildCli(bundleDir, buildVersion)
 
-  // ── Phase B: Build Desktop ────────────────────────────
-  await buildDesktop(bundleDir, buildVersion)
+  // ── Phase B: Build Desktop (optional) ──────────────
+  if (withDesktop) {
+    await buildDesktop(bundleDir, buildVersion)
+  } else {
+    console.log("🔨 Phase B: Skipping Desktop (use --desktop to build)\n")
+  }
 
   // ── Phase C: Download assets ──────────────────────────
   console.log("📦 Phase C: Downloading assets...\n")
@@ -365,8 +374,12 @@ async function main() {
   // ── Create symlinks ──────────────────────────────────
   await createSymlinks(bundleDir, platform)
 
-  // ── Copy env scripts ────────────────────────────────
-  for (const name of ["env.sh", "env.bat", "env.ps1"]) {
+  // ── Copy env scripts (platform-specific) ───────────
+  const envFiles = platform === "win32"
+    ? ["env.bat", "env.ps1"]
+    : ["env.sh"]
+
+  for (const name of envFiles) {
     const envSrc = path.join(__dirname, name)
     const envDest = path.join(bundleDir, name)
     if (!dryRun) {

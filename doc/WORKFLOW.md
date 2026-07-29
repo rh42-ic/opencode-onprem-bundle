@@ -8,7 +8,6 @@
 
 原因：
 
-- Desktop 构建（electron-builder）必须原生运行，无法跨平台交叉编译
 - 两类 runner GitHub 免费提供，并行执行互不阻塞
 - 矩阵结构只需一份步骤定义，维护成本低
 
@@ -38,7 +37,7 @@ CI 负责把 opencode-onprem-bundle 中的 patches 应用到 upstream 源码，�
 | | Linux | Windows |
 |---|---|---|
 | **Runner** | ubuntu-latest | windows-latest |
-| **系统依赖** | apt: libgtk-3-dev, zstd... | choco: 7zip |
+| **系统依赖** | apt: zstd | choco: 7zip |
 | **打包格式** | tar.zst | 7z (zstd) |
 | **bin/ 工具发现** | symlink | Scoop-style shim (shim.exe + .shim config) |
 | **env 脚本** | env.sh | env.bat + env.ps1 |
@@ -65,12 +64,11 @@ GitHub Actions Matrix
  │   ├─ 下载 upstream → workspace/upstream/
  │   ├─ git apply patches → upstream
  │   ├─ 复制 scripts + manifest + plugins + env.* → upstream/scripts/onprem/
- │   ├─ apt install libgtk-3-dev zstd ...
+ │   ├─ apt install zstd ...
  │   ├─ bun install
  │   ├─ bun run pack.ts --platform linux --arch x64
  │   │   ├─ CLI standalone binary
- │   │   ├─ electron Desktop
- │   │   ├─ tree-sitter / ripgrep / LSP / npm
+ │   │   ├─ tree-sitter / ripgrep / LSP / npm / models
  │   │   └─ tar --zstd 打包
  │   └─ upload-artifact (bundle-linux-x64)
  │
@@ -83,8 +81,7 @@ GitHub Actions Matrix
  │   ├─ bun install
  │   ├─ bun run pack.ts --platform win32 --arch x64
  │   │   ├─ CLI standalone binary (opencode.exe)
- │   │   ├─ electron Desktop (--win --dir)
- │   │   ├─ tree-sitter / ripgrep / LSP / npm / shim.exe
+ │   │   ├─ tree-sitter / ripgrep / LSP / npm / shim.exe / models
  │   │   └─ 7z a -tzstd 打包
  │   └─ upload-artifact (bundle-win32-x64)
  │
