@@ -282,10 +282,10 @@ async function main() {
   console.log(`║  output:   ${outDir.padEnd(30)} ║`)
   console.log(`╚══════════════════════════════════════════╝\n`)
 
-  const stats = { wasm: 0, queries: 0, rg: 0, lsp: 0, npm: 0, shim: 0, plugins: 0 }
+  const stats = { wasm: 0, queries: 0, rg: 0, models: 0, lsp: 0, npm: 0, shim: 0, plugins: 0 }
 
   // ── 1. tree-sitter wasm + queries ──────────────────────
-  console.log("📦 [1/5] Downloading tree-sitter resources...\n")
+  console.log("📦 [1/6] Downloading tree-sitter resources...\n")
 
   // Dynamically load parsers config from upstream
   const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -327,7 +327,7 @@ async function main() {
   }
 
   // ── 2. ripgrep ─────────────────────────────────────────
-  console.log("\n📦 [2/5] Downloading ripgrep...\n")
+  console.log("\n📦 [2/6] Downloading ripgrep...\n")
 
   const rgTarget = getRgTarget()
   const rgExt = platform === "win32" ? "zip" : "tar.gz"
@@ -369,8 +369,22 @@ async function main() {
     stats.rg++
   }
 
+  // ── 2.5 models.dev catalog ────────────────────────────
+  console.log("\n📦 [2.5/6] Downloading models catalog...\n")
+
+  const MODELS_API_URL = "https://models.dev/api.json"
+  const modelsDest = path.join(outDir, "models", "models.json")
+  if (!fs.existsSync(modelsDest)) {
+    await download(MODELS_API_URL, modelsDest)
+    stats.models++
+    console.log("  ✓ models catalog")
+  } else {
+    console.log("  ✓ models catalog (cached)")
+    stats.models++
+  }
+
   // ── 3. GitHub Releases LSP ─────────────────────────────
-  console.log("\n📦 [3/5] Downloading LSP binaries...\n")
+  console.log("\n📦 [4/6] Downloading LSP binaries...\n")
 
   for (const lsp of LSP_DEFS) {
     const lspDir = path.join(outDir, "lsp", lsp.name)
@@ -453,7 +467,7 @@ async function main() {
   }
 
   // ── 4. npm packages ────────────────────────────────────
-  console.log("\n📦 [4/5] Installing npm packages...\n")
+  console.log("\n📦 [5/6] Installing npm packages...\n")
 
   const tmpDir = path.join(outDir, ".tmp-npm")
   fs.mkdirSync(tmpDir, { recursive: true })
@@ -564,6 +578,7 @@ async function main() {
   console.log(`║  tree-sitter wasm:    ${String(stats.wasm).padEnd(3)}               ║`)
   console.log(`║  tree-sitter queries: ${String(stats.queries).padEnd(3)}               ║`)
   console.log(`║  ripgrep:             ${String(stats.rg).padEnd(3)}               ║`)
+  console.log(`║  models catalog:      ${String(stats.models).padEnd(3)}               ║`)
   console.log(`║  LSP binaries:        ${String(stats.lsp).padEnd(3)}               ║`)
   console.log(`║  npm packages:        ${String(stats.npm).padEnd(3)}               ║`)
   console.log(`║  shim.exe (Win only): ${String(stats.shim).padEnd(3)}               ║`)

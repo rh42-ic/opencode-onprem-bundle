@@ -16,4 +16,6 @@ $env:OPENCODE_DISABLE_AUTOUPDATE = "true"
 $env:OPENCODE_DISABLE_MODELS_FETCH = "true"
 $env:OPENCODE_DISABLE_LSP_DOWNLOAD = "true"
 
+$env:OPENCODE_MODELS_PATH = "$env:OPENCODE_ONPREM_DIR\assets\models\models.json"
+
 Write-Host "[opencode onprem] loaded from $env:OPENCODE_ONPREM_DIR"

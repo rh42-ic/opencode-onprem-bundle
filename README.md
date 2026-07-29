@@ -8,8 +8,8 @@
 
 ```bash
 # 1. 解压 bundle
-tar --zstd -xf opencode-onprem-v1.18.8-linux-x64.tar.zst
-cd opencode-onprem-v1.18.8-linux-x64/
+tar --zstd -xf opencode-onprem-v1.18.9-linux-x64.tar.zst
+cd opencode-onprem-v1.18.9-linux-x64/
 
 # 2. 加载环境
 source env.sh
@@ -21,7 +21,7 @@ opencode --version
 ## Bundle 结构
 
 ```
-opencode-onprem-v1.18.8-linux-x64/
+opencode-onprem-v1.18.9-linux-x64/
 ├── bin/                              # 可执行文件
 │   ├── opencode                      # CLI standalone binary
 │   ├── rg                            # ripgrep
@@ -51,7 +51,9 @@ opencode-onprem-v1.18.8-linux-x64/
 │   │   └── queries/                  # .scm 查询文件
 │   ├── rg/                           # ripgrep binary
 │   ├── lsp/                          # GitHub Releases LSP
-│   └── npm/                          # npm 包缓存 (12 个)
+│   ├── npm/                          # npm 包缓存 (12 个)
+│   └── models/                       # models.dev catalog (离线 model 配置)
+│       └── models.json
 ├── env.sh                            # 环境配置脚本
 └── README.md
 ```
@@ -64,6 +66,7 @@ opencode-onprem-v1.18.8-linux-x64/
 | `OPENCODE_DISABLE_AUTOUPDATE` | 禁用自动更新检查 |
 | `OPENCODE_DISABLE_MODELS_FETCH` | 禁用模型列表远程获取 |
 | `OPENCODE_DISABLE_LSP_DOWNLOAD` | 禁用 LSP 自动下载 |
+| `OPENCODE_MODELS_PATH` | 预下载的 models catalog JSON 文件路径（自动指向 assets/models/models.json） |
 
 ## Desktop 启动
 
@@ -78,16 +81,19 @@ source env.sh
 
 ```bash
 # 推荐：在 upstream 根目录运行
-cd opencode-1.18.8/
+cd opencode-1.18.9/
 
 # 步骤 1: 应用补丁
 git apply ../opencode-onprem-bundle/patches/001-parsers-config.patch
 git apply ../opencode-onprem-bundle/patches/002-npm-onprem-gate.patch
+git apply ../opencode-onprem-bundle/patches/003-file-type-deps.patch
 
 # 步骤 2: 复制脚本到 upstream
 cp ../opencode-onprem-bundle/scripts/download.ts scripts/onprem/
 cp ../opencode-onprem-bundle/scripts/pack.ts scripts/onprem/
 cp ../opencode-onprem-bundle/scripts/env.sh scripts/onprem/
+cp ../opencode-onprem-bundle/scripts/env.bat scripts/onprem/
+cp ../opencode-onprem-bundle/scripts/env.ps1 scripts/onprem/
 
 # 步骤 3: 运行打包
 bun run scripts/onprem/pack.ts --platform linux --arch x64

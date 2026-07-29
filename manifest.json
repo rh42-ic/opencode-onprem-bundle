@@ -1,5 +1,5 @@
 {
-  "version": "1.18.8",
+  "version": "1.18.9",
   "upstream": "https://github.com/anomalyco/opencode",
   "compatibility": {
     "bun": ">=1.3.14",
@@ -25,13 +25,15 @@
     "ripgrep": "15.1.0",
     "github_lsp": 7,
     "npm_packages": 12,
-    "extra_plugins": ["opencode-anthropic-auth", "oh-my-openagent", "oh-my-opencode-slim", "superpowers", "@tarquinen/opencode-dcp", "opencode-supermemory", "opencode-visual-cache"]
+    "extra_plugins": ["opencode-anthropic-auth", "oh-my-openagent", "oh-my-opencode-slim", "superpowers", "@tarquinen/opencode-dcp", "opencode-supermemory", "opencode-visual-cache"],
+    "models_catalog": "models.dev/api.json snapshot"
   },
   "env_vars": {
     "OPENCODE_ONPREM_DIR": "bundle 根目录路径（由 env.sh 自动设置）",
     "OPENCODE_DISABLE_AUTOUPDATE": "禁用自动更新",
     "OPENCODE_DISABLE_MODELS_FETCH": "禁用模型列表获取",
-    "OPENCODE_DISABLE_LSP_DOWNLOAD": "禁用 LSP 自动下载"
+    "OPENCODE_DISABLE_LSP_DOWNLOAD": "禁用 LSP 自动下载",
+    "OPENCODE_MODELS_PATH": "预下载的 models catalog 文件路径（由 env.sh 自动设置）"
   },
   "build": {
     "cli_entry": "packages/opencode",

@@ -13,4 +13,6 @@ set "OPENCODE_DISABLE_AUTOUPDATE=true"
 set "OPENCODE_DISABLE_MODELS_FETCH=true"
 set "OPENCODE_DISABLE_LSP_DOWNLOAD=true"
 
+set "OPENCODE_MODELS_PATH=%OPENCODE_ONPREM_DIR%\assets\models\models.json"
+
 echo [opencode onprem] loaded from %OPENCODE_ONPREM_DIR%
