@@ -8,8 +8,8 @@
 
 ```bash
 # 1. 解压 bundle
-tar --zstd -xf opencode-onprem-v1.18.9-linux-x64.tar.zst
-cd opencode-onprem-v1.18.9-linux-x64/
+tar --zstd -xf opencode-onprem-v1.18.14-linux-x64.tar.zst
+cd opencode-onprem-v1.18.14-linux-x64/
 
 # 2. 加载环境
 source env.sh
@@ -21,7 +21,7 @@ opencode --version
 ## Bundle 结构
 
 ```
-opencode-onprem-v1.18.9-linux-x64/
+opencode-onprem-v1.18.14-linux-x64/
 ├── bin/                              # 可执行文件
 │   ├── opencode                      # CLI standalone binary
 │   ├── rg                            # ripgrep
@@ -70,21 +70,24 @@ opencode-onprem-v1.18.9-linux-x64/
 
 ```bash
 # 推荐：在 upstream 根目录运行
-cd opencode-1.18.9/
+cd opencode-1.18.14/
 
 # 步骤 1: 应用补丁
 git apply ../opencode-onprem-bundle/patches/001-parsers-config.patch
 git apply ../opencode-onprem-bundle/patches/002-npm-onprem-gate.patch
 git apply ../opencode-onprem-bundle/patches/003-file-type-deps.patch
 
-# 步骤 2: 复制脚本到 upstream
+# 步骤 2: 复制脚本到 upstream（download.ts 通过 __dirname 读取同目录的 plugins.json，必须放一起）
+mkdir -p scripts/onprem
 cp ../opencode-onprem-bundle/scripts/download.ts scripts/onprem/
 cp ../opencode-onprem-bundle/scripts/pack.ts scripts/onprem/
 cp ../opencode-onprem-bundle/scripts/env.sh scripts/onprem/
 cp ../opencode-onprem-bundle/scripts/env.bat scripts/onprem/
 cp ../opencode-onprem-bundle/scripts/env.ps1 scripts/onprem/
+cp ../opencode-onprem-bundle/manifest.json scripts/onprem/
+cp ../opencode-onprem-bundle/plugins.json scripts/onprem/
 
-# 步骤 3: 运行打包
+# 步骤 3: 运行打包（pack.ts 从 manifest.json 读取版本号，需与 OPENCODE_VERSION 一致）
 bun run scripts/onprem/pack.ts --platform linux --arch x64
 ```
 

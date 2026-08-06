@@ -1,11 +1,12 @@
 {
   "plugins": [
-    "opencode-anthropic-auth@latest",
-    "oh-my-openagent@latest",
-    "oh-my-opencode-slim@latest",
+    "opencode-pty",
+    "oh-my-openagent",
+    "oh-my-opencode-slim",
     "superpowers@git+https://github.com/obra/superpowers.git",
-    "@tarquinen/opencode-dcp@latest",
-    "opencode-supermemory@latest",
-    "opencode-visual-cache@latest"
+    "@tarquinen/opencode-dcp",
+    "opencode-supermemory",
+    "opencode-visual-cache",
+    "@prevalentware/opencode-goal-plugin"
   ]
 }

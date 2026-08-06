@@ -1,8 +1,8 @@
 diff --git a/package.json b/package.json
-index 662f9a4..31161a8 100644
+index 5871254..d3b1698 100644
 --- a/package.json
 +++ b/package.json
-@@ -106,7 +106,8 @@
+@@ -107,7 +107,8 @@
      "prettier": "3.6.2",
      "semver": "^7.6.0",
      "sst": "catalog:",
