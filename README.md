@@ -49,7 +49,9 @@ opencode-onprem-v1.18.14-linux-x64/
 │   │   └── queries/                  # .scm 查询文件
 │   ├── rg/                           # ripgrep binary
 │   ├── lsp/                          # GitHub Releases LSP
-│   ├── npm/                          # npm 包缓存 (12 个)
+│   ├── eslint/                       # vscode-eslint LSP (构建机预编译, 原版行为)
+│   │   └── vscode-eslint/            #   main.zip → npm install → npm run compile
+│   ├── npm/                          # npm 包缓存 (13 个, 含 eslint 本体)
 │   └── models/                       # models.dev catalog (离线 model 配置)
 │       └── models.json
 ├── env.sh                            # 环境配置脚本
@@ -100,7 +102,6 @@ bun run scripts/onprem/pack.ts --platform linux --arch x64
 | gopls | Go | 需完整 Go 工具链 |
 | rubocop | Ruby | 需完整 Ruby 环境 |
 | csharp-ls | C# | 需 .NET SDK |
-| eslint | JS/TS | 暂无 |
 | mix compile | Elixir | 需完整 Elixir 环境 |
 
 ## License

@@ -1,0 +1,35 @@
+diff --git a/packages/opencode/src/lsp/server.ts b/packages/opencode/src/lsp/server.ts
+index 2be68aa..8d19c4d 100644
+--- a/packages/opencode/src/lsp/server.ts
++++ b/packages/opencode/src/lsp/server.ts
+@@ -177,7 +177,10 @@ export const ESLint: Info = {
+   async spawn(root, ctx, flags) {
+     const eslint = Module.resolve("eslint", ctx.directory)
+     if (!eslint) return
+-    const serverPath = path.join(Global.Path.bin, "vscode-eslint", "server", "out", "eslintServer.js")
++    const onpremBase = process.env.OPENCODE_ONPREM_DIR
++    const serverPath = onpremBase
++      ? path.join(onpremBase, "assets", "eslint", "vscode-eslint", "server", "out", "eslintServer.js")
++      : path.join(Global.Path.bin, "vscode-eslint", "server", "out", "eslintServer.js")
+     if (!(await Filesystem.exists(serverPath))) {
+       if (flags.disableLspDownload) return
+       const response = await fetch("https://github.com/microsoft/vscode-eslint/archive/refs/heads/main.zip")
+@@ -212,6 +215,18 @@ export const ESLint: Info = {
+       cwd: root,
+       env: {
+         ...process.env,
++        // onprem: 让 vscode-eslint 的 Files.resolve 能解析到 bundle 预置的 eslint 本体
++        // (require.resolve 顺序: 工作区 node_modules 优先, NODE_PATH 兜底)
++        ...(onpremBase
++          ? {
++              NODE_PATH: [
++                path.join(onpremBase, "assets", "npm", "eslint", "node_modules"),
++                process.env.NODE_PATH,
++              ]
++                .filter(Boolean)
++                .join(path.delimiter),
++            }
++          : {}),
+       },
+     })
+ 

@@ -22,6 +22,11 @@
       "file": "003-file-type-deps.patch",
       "target": "package.json",
       "description": "添加 file-type devDependency，用于打包时 MIME 探测"
+    },
+    {
+      "file": "004-eslint-onprem.patch",
+      "target": "packages/opencode/src/lsp/server.ts",
+      "description": "onprem 模式下将 vscode-eslint LSP server 路径重定向到 bundle 内 assets/eslint/vscode-eslint（构建机预编译，随 bundle 离线分发），并在 spawn 时注入 NODE_PATH 指向 bundle 预置的 eslint 本体 (assets/npm/eslint)"
     }
   ],
   "assets": {
@@ -29,7 +34,8 @@
     "tree_sitter_queries": "~50 files",
     "ripgrep": "15.1.0",
     "github_lsp": 7,
-    "npm_packages": 12,
+    "eslint_lsp": "vscode-eslint (main 分支源码编译, 与原版下载行为一致) + eslint 本体 (npm)",
+    "npm_packages": 13,
     "extra_plugins": ["opencode-anthropic-auth", "oh-my-openagent", "oh-my-opencode-slim", "superpowers", "@tarquinen/opencode-dcp", "opencode-supermemory", "opencode-visual-cache"],
     "models_catalog": "models.dev/api.json snapshot"
   },

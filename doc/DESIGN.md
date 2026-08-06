@@ -203,7 +203,7 @@ opencode-onprem-v1.18.9-linux-x64/
 │   │       │   └── node_modules/...
 │   │       ├── pyright/
 │   │       │   └── node_modules/...
-│   │       └── ...（12 个 npm 包 + plugins.json 中的额外插件）
+│   │       └── ...（13 个 npm 包 + plugins.json 中的额外插件）
 │   │
 │   └── models/                       # models.dev catalog（离线 model 配置）
 │       └── models.json
@@ -239,7 +239,7 @@ opencode-onprem-v1.18.9-linux-x64/
 | texlab | tar.gz/zip → 解压 | GitHub Releases API → latest |
 | tinymist | tar.gz/zip → 解压 | GitHub Releases API → latest |
 
-### npm 包（12 个 LSP + Formatter）
+### npm 包（12 个 LSP + Formatter + eslint 本体）
 
 | 包名 | 用途 |
 |---|---|
@@ -358,7 +358,7 @@ bun run scripts/onprem/pack.ts \
 5. 复制编译产物 → `dist/<bundle>/bin/opencode`
 
    **阶段 B — 共享资源 + 打包**:
-6. 调用 `download.ts --out ./dist/<bundle>/assets` → 预下载 wasm/queries/LSP/rg/npm/models
+6. 调用 `download.ts --out ./dist/<bundle>/assets` → 预下载 wasm/queries/LSP/rg/npm/models + 预编译 vscode-eslint
 7. 创建 `bin/` 下工具入口:
     - Linux/macOS: 创建相对路径 soft links → `assets/` 中对应工具
     - Windows: 生成 Scoop-style shim — 每个工具 `bin/<tool>.exe`（shim.exe 副本）+ `<tool>.shim`（含 `%OPENCODE_ONPREM_DIR%` 路径）
@@ -378,7 +378,7 @@ bun run scripts/onprem/pack.ts \
 | go install (gopls) | onprem 模式下用户自行提供 go 环境 |
 | gem install (rubocop) | onprem 模式下用户自行提供 ruby 环境 |
 | dotnet tool install | onprem 模式下用户自行提供 dotnet 环境 |
-| eslint/mix compile | 编译环境过于复杂，跳过 |
+| mix compile | 编译环境过于复杂，跳过 |
 | provider 动态包 | 22 个内置 provider 已随 bundle 分发，自定义 provider 极罕见 |
 
 ---

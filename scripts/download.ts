@@ -156,6 +156,9 @@ const NPM_PACKAGES = [
   "biome",
   "prettier",
   "@biomejs/biome",
+  // eslint 本体: vscode-eslint server 通过 Files.resolve 从工作区/全局/NODE_PATH 解析,
+  // 预置在 assets/npm/eslint 下供 onprem 模式兜底 (server.ts 的 ESLint spawn 注入 NODE_PATH)
+  "eslint",
 ]
 
 /**
@@ -282,7 +285,7 @@ async function main() {
   console.log(`║  output:   ${outDir.padEnd(30)} ║`)
   console.log(`╚══════════════════════════════════════════╝\n`)
 
-  const stats = { wasm: 0, queries: 0, rg: 0, models: 0, lsp: 0, npm: 0, shim: 0, plugins: 0 }
+  const stats = { wasm: 0, queries: 0, rg: 0, models: 0, lsp: 0, npm: 0, shim: 0, plugins: 0, eslint: 0 }
 
   // ── 1. tree-sitter wasm + queries ──────────────────────
   console.log("📦 [1/6] Downloading tree-sitter resources...\n")
@@ -466,6 +469,44 @@ async function main() {
     }
   }
 
+  // ── 4.5 vscode-eslint LSP (源码编译, 与原版行为一致) ──
+  console.log("\n📦 [4.5/6] Building vscode-eslint LSP...\n")
+
+  const eslintDir = path.join(outDir, "eslint", "vscode-eslint")
+  const eslintEntry = path.join(eslintDir, "server", "out", "eslintServer.js")
+  if (!fs.existsSync(eslintEntry)) {
+    try {
+      // 复刻 opencode 原版 ESLint provider 的运行时下载行为:
+      //   fetch main.zip → 解压为 vscode-eslint-main → rename vscode-eslint → npm install → npm run compile
+      // 只在构建机上执行, 产物随 bundle 离线分发
+      const eslintTmp = path.join(outDir, ".tmp-eslint")
+      fs.mkdirSync(eslintTmp, { recursive: true })
+      const zipPath = path.join(eslintTmp, "vscode-eslint.zip")
+      await download("https://github.com/microsoft/vscode-eslint/archive/refs/heads/main.zip", zipPath)
+      await extractArchive(zipPath, eslintTmp)
+      fs.rmSync(zipPath, { force: true })
+
+      const extractedPath = path.join(eslintTmp, "vscode-eslint-main")
+      if (!fs.existsSync(extractedPath)) throw new Error("vscode-eslint-main not found after extract")
+      if (fs.existsSync(eslintDir)) fs.rmSync(eslintDir, { recursive: true, force: true })
+      fs.mkdirSync(path.dirname(eslintDir), { recursive: true })
+      fs.renameSync(extractedPath, eslintDir)
+
+      const npmCmd = platform === "win32" ? "npm.cmd" : "npm"
+      await $`${npmCmd} install --no-audit --no-fund`.cwd(eslintDir).quiet()
+      await $`${npmCmd} run compile`.cwd(eslintDir).quiet()
+
+      fs.rmSync(eslintTmp, { recursive: true, force: true })
+      stats.eslint++
+      console.log("  ✓ vscode-eslint")
+    } catch (e: any) {
+      console.log(`  ✗ vscode-eslint: ${e.message}`)
+    }
+  } else {
+    console.log("  ✓ vscode-eslint (cached)")
+    stats.eslint++
+  }
+
   // ── 4. npm packages ────────────────────────────────────
   console.log("\n📦 [5/6] Installing npm packages...\n")
 
@@ -580,6 +621,7 @@ async function main() {
   console.log(`║  ripgrep:             ${String(stats.rg).padEnd(3)}               ║`)
   console.log(`║  models catalog:      ${String(stats.models).padEnd(3)}               ║`)
   console.log(`║  LSP binaries:        ${String(stats.lsp).padEnd(3)}               ║`)
+  console.log(`║  vscode-eslint:       ${String(stats.eslint).padEnd(3)}               ║`)
   console.log(`║  npm packages:        ${String(stats.npm).padEnd(3)}               ║`)
   console.log(`║  shim.exe (Win only): ${String(stats.shim).padEnd(3)}               ║`)
   console.log(`╚══════════════════════════════════════════╝\n`)
