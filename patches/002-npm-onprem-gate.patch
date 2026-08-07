@@ -1,19 +1,19 @@
 diff --git a/packages/core/src/npm.ts b/packages/core/src/npm.ts
-index 30e12cf..9c26c55 100644
+index 30e12cf..a89a597 100644
 --- a/packages/core/src/npm.ts
 +++ b/packages/core/src/npm.ts
-@@ -13,6 +13,33 @@ import { LayerNode } from "./effect/layer-node"
+@@ -1,6 +1,7 @@
+ export * as Npm from "./npm"
+ 
+ import path from "path"
++import { existsSync } from "node:fs"
+ import npa from "npm-package-arg"
+ import { Effect, Schema, Context, Layer, Option, FileSystem } from "effect"
+ import { NodeFileSystem } from "@effect/platform-node"
+@@ -13,6 +14,25 @@ import { LayerNode } from "./effect/layer-node"
  import { makeRuntime } from "./effect/runtime"
  import { NpmConfig } from "./npm-config"
  
-+const existsSync = (p: string) => {
-+  try {
-+    return Bun.file(p).exists()
-+  } catch {
-+    return false
-+  }
-+}
-+
 +const findPackageDir = (pkg: string): string | undefined => {
 +  let name: string
 +  try {
@@ -36,7 +36,7 @@ index 30e12cf..9c26c55 100644
  export class InstallFailedError extends Schema.TaggedErrorClass<InstallFailedError>()("NpmInstallFailedError", {
    add: Schema.Array(Schema.String).pipe(Schema.optional),
    dir: Schema.String,
-@@ -113,7 +140,6 @@ const layer = Layer.effect(
+@@ -113,7 +133,6 @@ const layer = Layer.effect(
        )
  
      const add = Effect.fn("Npm.add")(function* (pkg: string) {
@@ -44,7 +44,7 @@ index 30e12cf..9c26c55 100644
        const name = (() => {
          try {
            return npa(pkg).name ?? pkg
-@@ -122,6 +148,18 @@ const layer = Layer.effect(
+@@ -122,6 +141,18 @@ const layer = Layer.effect(
          }
        })()
  
@@ -63,7 +63,7 @@ index 30e12cf..9c26c55 100644
        if (yield* afs.existsSafe(path.join(dir, "node_modules", name))) {
          return resolveEntryPoint(name, path.join(dir, "node_modules", name))
        }
-@@ -190,7 +228,8 @@ const layer = Layer.effect(
+@@ -190,7 +221,8 @@ const layer = Layer.effect(
      }, Effect.scoped)
  
      const which = Effect.fn("Npm.which")(function* (pkg: string, bin?: string) {
