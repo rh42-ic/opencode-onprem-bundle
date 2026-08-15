@@ -8,8 +8,8 @@
 
 ```bash
 # 1. 解压 bundle
-tar --zstd -xf opencode-onprem-v1.18.14-linux-x64.tar.zst
-cd opencode-onprem-v1.18.14-linux-x64/
+tar --zstd -xf opencode-onprem-v1.18.18-linux-x64.tar.zst
+cd opencode-onprem-v1.18.18-linux-x64/
 
 # 2. 加载环境
 source env.sh
@@ -21,7 +21,7 @@ opencode --version
 ## Bundle 结构
 
 ```
-opencode-onprem-v1.18.14-linux-x64/
+opencode-onprem-v1.18.18-linux-x64/
 ├── bin/                              # 可执行文件
 │   ├── opencode                      # CLI standalone binary
 │   ├── rg                            # ripgrep
@@ -61,7 +61,7 @@ opencode-onprem-v1.18.14-linux-x64/
 ## 环境变量
 
 | 变量 | 说明 |
-|---|---|
+| --- | --- |
 | `OPENCODE_ONPREM_DIR` | bundle 根目录路径（env.sh 自动设置） |
 | `OPENCODE_DISABLE_AUTOUPDATE` | 禁用自动更新检查 |
 | `OPENCODE_DISABLE_MODELS_FETCH` | 禁用模型列表远程获取 |
@@ -72,12 +72,13 @@ opencode-onprem-v1.18.14-linux-x64/
 
 ```bash
 # 推荐：在 upstream 根目录运行
-cd opencode-1.18.14/
+cd opencode-1.18.18/
 
 # 步骤 1: 应用补丁
 git apply ../opencode-onprem-bundle/patches/001-parsers-config.patch
 git apply ../opencode-onprem-bundle/patches/002-npm-onprem-gate.patch
 git apply ../opencode-onprem-bundle/patches/003-file-type-deps.patch
+git apply ../opencode-onprem-bundle/patches/004-eslint-onprem.patch
 
 # 步骤 2: 复制脚本到 upstream（download.ts 通过 __dirname 读取同目录的 plugins.json，必须放一起）
 mkdir -p scripts/onprem
@@ -98,7 +99,7 @@ bun run scripts/onprem/pack.ts --platform linux --arch x64
 以下工具需用户在 air-gap 环境中自行提供：
 
 | 工具 | 语言 | 原因 |
-|---|---|---|
+| --- | --- | --- |
 | gopls | Go | 需完整 Go 工具链 |
 | rubocop | Ruby | 需完整 Ruby 环境 |
 | csharp-ls | C# | 需 .NET SDK |
