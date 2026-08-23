@@ -8,8 +8,8 @@
 
 ```bash
 # 1. 解压 bundle
-tar --zstd -xf opencode-onprem-v1.18.18-linux-x64.tar.zst
-cd opencode-onprem-v1.18.18-linux-x64/
+tar --zstd -xf opencode-onprem-v1.18.21-linux-x64.tar.zst
+cd opencode-onprem-v1.18.21-linux-x64/
 
 # 2. 加载环境
 source env.sh
@@ -21,7 +21,7 @@ opencode --version
 ## Bundle 结构
 
 ```
-opencode-onprem-v1.18.18-linux-x64/
+opencode-onprem-v1.18.21-linux-x64/
 ├── bin/                              # 可执行文件
 │   ├── opencode                      # CLI standalone binary
 │   ├── rg                            # ripgrep
@@ -72,7 +72,7 @@ opencode-onprem-v1.18.18-linux-x64/
 
 ```bash
 # 推荐：在 upstream 根目录运行
-cd opencode-1.18.18/
+cd opencode-1.18.21/
 
 # 步骤 1: 应用补丁
 git apply ../opencode-onprem-bundle/patches/001-parsers-config.patch
