@@ -51,7 +51,7 @@ opencode-onprem-v1.18.21-linux-x64/
 │   ├── lsp/                          # GitHub Releases LSP
 │   ├── eslint/                       # vscode-eslint LSP (构建机预编译, 原版行为)
 │   │   └── vscode-eslint/            #   main.zip → npm install → npm run compile
-│   ├── npm/                          # npm 包缓存 (13 个, 含 eslint 本体)
+│   ├── npm/                          # npm 包缓存 (14 个, 含 eslint 本体与插件 SDK)
 │   └── models/                       # models.dev catalog (离线 model 配置)
 │       └── models.json
 ├── env.sh                            # 环境配置脚本

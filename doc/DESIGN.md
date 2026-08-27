@@ -82,25 +82,32 @@ function localize(parsers: any[]) {
 
 **目的**: 
 1. 新增 `findPackageDir()` 函数，优先从 onprem 预置目录查找已安装包
-2. onprem 模式下，`add()` 未命中时阻断网络安装（作为离线总闸）
+2. onprem 模式下，`add()`/`install()` 未命中时阻断网络安装（作为离线总闸）
+3. 兼容镜像源：显式配置了非默认 registry（如内网镜像）时放行正常安装流程
 
 **方案**:
 
 新增辅助函数:
 ```ts
 const findPackageDir = (pkg: string): string | undefined => {
-  const name = sanitize(pkg)
+  let name: string
+  try {
+    name = (npa(pkg).name ?? pkg).replace("/", "+")
+  } catch {
+    name = pkg.replace("/", "+")
+  }
   const onpremBase = process.env.OPENCODE_ONPREM_DIR
   if (onpremBase) {
     const onpremDir = path.join(onpremBase, "assets", "npm", name)
     if (existsSync(path.join(onpremDir, "node_modules"))) return onpremDir
   }
-  const cacheDir = path.join(global.cache, "packages", name)
+  const cacheDir = path.join(Global.Path.cache, "packages", name)
   if (existsSync(path.join(cacheDir, "node_modules"))) return cacheDir
   return undefined
 }
 
 const isOnprem = !!process.env.OPENCODE_ONPREM_DIR
+const DEFAULT_REGISTRY = "https://registry.npmjs.org"
 ```
 
 修改 `add()`:
@@ -111,16 +118,50 @@ const add = Effect.fn("Npm.add")(function* (pkg: string) {
   if (found) {
     return resolveEntryPoint(name, path.join(found, "node_modules", name))
   }
-  // onprem 模式：未预置的包直接拒绝，不触发网络安装
-  if (isOnprem) {
-    return yield* new InstallFailedError({ add: [pkg], dir: "" })
-  }
-  // 非 onprem：原有 reify 逻辑
   const dir = directory(pkg)
+  // onprem 模式：未配置镜像时未预置的包直接拒绝，不触发网络安装；
+  // 显式配置了非默认 registry（如内网镜像）则放行正常安装流程
+  if (isOnprem) {
+    const registry = yield* NpmConfig.registry(dir).pipe(Effect.orElseSucceed(() => DEFAULT_REGISTRY))
+    if (registry === DEFAULT_REGISTRY) {
+      return yield* new InstallFailedError({ add: [pkg], dir: "" })
+    }
+  }
+  // 非 onprem（或已配置镜像）：原有 reify 逻辑
   if (yield* afs.existsSafe(path.join(dir, "node_modules", name))) {
     return resolveEntryPoint(name, path.join(dir, "node_modules", name))
   }
   const tree = yield* reify({ dir, add: [pkg] })
+  ...
+})
+```
+
+修改 `install()`（新增门禁，修复插件 SDK 安装黑屏问题）:
+```ts
+const install = Effect.fn("Npm.install")(function* (dir, input) {
+  const canWrite = ...
+  if (!canWrite) return
+  // onprem 模式：预置包一律从预置目录拷贝到项目目录 node_modules（使本地插件可以 import，
+  // 如 @opencode-ai/plugin），绝不触发网络安装；未预置的包在未配置镜像时直接跳过（不阻塞启动），
+  // 显式配置了非默认 registry（如内网镜像）时放行网络安装。
+  let remaining = input
+  if (isOnprem) {
+    const registry = yield* NpmConfig.registry(dir).pipe(Effect.orElseSucceed(() => DEFAULT_REGISTRY))
+    const missing = []
+    for (const pkg of input?.add ?? []) {
+      const spec = [pkg.name, pkg.version].filter(Boolean).join("@")
+      const found = findPackageDir(spec)
+      if (!found) { missing.push(pkg); continue }
+      const target = path.join(dir, "node_modules", pkg.name)
+      yield* fs.makeDirectory(path.dirname(target), { recursive: true }).pipe(
+        Effect.andThen(fs.copy(path.join(found, "node_modules", pkg.name), target, { overwrite: true })),
+        Effect.catch((cause) => Effect.logWarning("onprem package copy failed", { pkg: pkg.name, cause })),
+      )
+    }
+    if (registry === DEFAULT_REGISTRY || missing.length === 0) return
+    remaining = { add: missing }
+  }
+  // 非 onprem（或已配置镜像）：原有 reify 逻辑
   ...
 })
 ```
@@ -137,13 +178,16 @@ const which = Effect.fn("Npm.which")(function* (pkg: string, bin?: string) {
 
 **查找优先级**: onprem (只读) → cache (用户可写) → undefined
 
+**镜像兼容**: 门禁判断基于 `NpmConfig.registry(dir)`（@npmcli/config 读 env + .npmrc）。registry 等于默认 `https://registry.npmjs.org` 时视为未配置镜像 → 阻断网络；配置了非默认 registry（如 `https://registry.npmmirror.com` 或内网 nexus/verdaccio）→ 未预置的包放行网络安装（预置包仍优先从预置目录拷贝，不重复下载）。registry 加载失败时按默认值处理（安全默认：阻断）。
+
 **被此 patch 保护的所有路径**:
-| 场景 | 原行为 | onprem 行为 |
+| 场景 | 原行为 | onprem 行为（未配置镜像） |
 |---|---|---|
 | LSP `Npm.which()` × 10 | 未命中 → arborist 在线安装 | 命中则用，未命中 → 静默不可用 |
 | Formatter `Npm.which()` × 3 | 未命中 → arborist 在线安装 | 同上 |
 | Plugin `Npm.add()` | 在线安装 | 命中则用，未命中 → 报错 |
 | Provider `Npm.add()` | 在线安装 | 命中则用，未命中 → 报错 |
+| 项目 `.opencode` 依赖安装 `Npm.install()` | 在线安装 @opencode-ai/plugin | 预置命中 → 拷贝到项目 node_modules；未命中 → 未配置镜像时跳过（不阻塞启动），配置镜像时放行网络安装 |
 | 用户 `opencode plug xxx` | 在线安装 | 查找失败（console 提示） |
 
 ---
@@ -203,7 +247,7 @@ opencode-onprem-v1.18.21-linux-x64/
 │   │       │   └── node_modules/...
 │   │       ├── pyright/
 │   │       │   └── node_modules/...
-│   │       └── ...（13 个 npm 包 + plugins.json 中的额外插件）
+│   │       └── ...（14 个 npm 包 + plugins.json 中的额外插件）
 │   │
 │   └── models/                       # models.dev catalog（离线 model 配置）
 │       └── models.json
@@ -239,7 +283,7 @@ opencode-onprem-v1.18.21-linux-x64/
 | texlab | tar.gz/zip → 解压 | GitHub Releases API → latest |
 | tinymist | tar.gz/zip → 解压 | GitHub Releases API → latest |
 
-### npm 包（12 个 LSP + Formatter + eslint 本体）
+### npm 包（12 个 LSP + Formatter + eslint 本体 + 插件 SDK）
 
 | 包名 | 用途 |
 |---|---|
@@ -255,6 +299,7 @@ opencode-onprem-v1.18.21-linux-x64/
 | `biome` | Biome LSP |
 | `prettier` | 通用 Formatter |
 | `@biomejs/biome` | Biome Formatter |
+| `@opencode-ai/plugin` | 插件 SDK（本地插件 import 用，版本与 bundle 对齐） |
 
 ### 额外插件（来自 plugins.json）
 
@@ -390,6 +435,30 @@ bun run scripts/onprem/pack.ts \
 - **npm 包加载不依赖软链接**: `findPackageDir()` 直接从 onprem 目录读，不影响 `~/.cache/opencode/packages/`
 
 ---
+
+## 测试
+
+`tests/npm-onprem-gate.test.ts` 是 onprem npm 门禁的冒烟测试，验证 `Npm.add()`/`Npm.install()` 在 onprem 模式下的行为（002 补丁）：
+
+| 场景 | 验证点 |
+| --- | --- |
+| A | install 默认 registry + 预置命中 → 从预置目录拷贝（不联网） |
+| B | install 默认 registry + 未预置 → 跳过不抛错（不阻塞启动） |
+| C | install 镜像 + 预置命中 → 拷贝优先（不重新下载） |
+| C2 | install 镜像 + 未预置 → 放行 reify（网络安装） |
+| D | add 预置命中 → 预置路径 |
+| E | add 未预置 → InstallFailedError |
+| F | add 镜像 + 未预置 → 放行 reify（cache 路径） |
+
+运行方式（在 upstream 仓库中，需先应用 002 补丁）：
+
+```bash
+cp ../opencode-onprem-bundle/tests/npm-onprem-gate.test.ts packages/core/
+cd packages/core
+bun run npm-onprem-gate.test.ts
+```
+
+场景 A/B/C/D/E 完全离线可跑；C2/F 需要网络（真实从镜像下载 `is-number` 验证放行逻辑）。
 
 ## 维护说明
 

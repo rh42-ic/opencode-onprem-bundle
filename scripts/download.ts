@@ -521,7 +521,13 @@ async function main() {
     extraPlugins = pluginsJson.plugins ?? []
   }
 
-  const allPackages = [...NPM_PACKAGES, ...extraPlugins]
+  // @opencode-ai/plugin 是插件 SDK，版本与 bundle 对齐（manifest.json version）。
+  // 预置后 onprem 模式下 Npm.install() 可从 assets/npm 本地安装，避免回源 registry。
+  const manifestPath = path.resolve(__dirname, "manifest.json")
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"))
+  const pluginSdk = `@opencode-ai/plugin@${manifest.version}`
+
+  const allPackages = [...NPM_PACKAGES, pluginSdk, ...extraPlugins]
 
   for (const pkg of allPackages) {
     const safeName = extractPackageName(pkg).replace("/", "+")

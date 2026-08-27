@@ -1,5 +1,5 @@
 diff --git a/packages/core/src/npm.ts b/packages/core/src/npm.ts
-index 30e12cf..a89a597 100644
+index 30e12cf..7bfca43 100644
 --- a/packages/core/src/npm.ts
 +++ b/packages/core/src/npm.ts
 @@ -1,6 +1,7 @@
@@ -10,7 +10,7 @@ index 30e12cf..a89a597 100644
  import npa from "npm-package-arg"
  import { Effect, Schema, Context, Layer, Option, FileSystem } from "effect"
  import { NodeFileSystem } from "@effect/platform-node"
-@@ -13,6 +14,25 @@ import { LayerNode } from "./effect/layer-node"
+@@ -13,6 +14,28 @@ import { LayerNode } from "./effect/layer-node"
  import { makeRuntime } from "./effect/runtime"
  import { NpmConfig } from "./npm-config"
  
@@ -33,10 +33,13 @@ index 30e12cf..a89a597 100644
 +
 +const isOnprem = !!process.env.OPENCODE_ONPREM_DIR
 +
++// npm 默认 registry。onprem 模式下只有显式配置了非默认 registry（如内网镜像）才放行网络安装。
++const DEFAULT_REGISTRY = "https://registry.npmjs.org"
++
  export class InstallFailedError extends Schema.TaggedErrorClass<InstallFailedError>()("NpmInstallFailedError", {
    add: Schema.Array(Schema.String).pipe(Schema.optional),
    dir: Schema.String,
-@@ -113,7 +133,6 @@ const layer = Layer.effect(
+@@ -113,7 +136,6 @@ const layer = Layer.effect(
        )
  
      const add = Effect.fn("Npm.add")(function* (pkg: string) {
@@ -44,7 +47,7 @@ index 30e12cf..a89a597 100644
        const name = (() => {
          try {
            return npa(pkg).name ?? pkg
-@@ -122,6 +141,18 @@ const layer = Layer.effect(
+@@ -122,6 +144,22 @@ const layer = Layer.effect(
          }
        })()
  
@@ -53,17 +56,54 @@ index 30e12cf..a89a597 100644
 +        return resolveEntryPoint(name, path.join(found, "node_modules", name))
 +      }
 +
-+      // onprem 模式：未预置的包直接拒绝，不触发网络安装
-+      if (isOnprem) {
-+        return yield* new InstallFailedError({ add: [pkg], dir: "" })
-+      }
-+
 +      const dir = directory(pkg)
++
++      // onprem 模式：未配置镜像时未预置的包直接拒绝，不触发网络安装；
++      // 显式配置了非默认 registry（如内网镜像）则放行正常安装流程
++      if (isOnprem) {
++        const registry = yield* NpmConfig.registry(dir).pipe(Effect.orElseSucceed(() => DEFAULT_REGISTRY))
++        if (registry === DEFAULT_REGISTRY) {
++          return yield* new InstallFailedError({ add: [pkg], dir: "" })
++        }
++      }
 +
        if (yield* afs.existsSafe(path.join(dir, "node_modules", name))) {
          return resolveEntryPoint(name, path.join(dir, "node_modules", name))
        }
-@@ -190,7 +221,8 @@ const layer = Layer.effect(
+@@ -143,7 +181,31 @@ const layer = Layer.effect(
+       )
+       if (!canWrite) return
+ 
+-      const add = input?.add.map((pkg) => [pkg.name, pkg.version].filter(Boolean).join("@")) ?? []
++      // onprem 模式：预置包一律从预置目录拷贝到项目目录 node_modules（使本地插件可以 import，
++      // 如 @opencode-ai/plugin），绝不触发网络安装；未预置的包在未配置镜像时直接跳过（不阻塞启动），
++      // 显式配置了非默认 registry（如内网镜像）时放行网络安装。
++      let remaining: { add: { name: string; version?: string }[] } | undefined = input
++      if (isOnprem) {
++        const registry = yield* NpmConfig.registry(dir).pipe(Effect.orElseSucceed(() => DEFAULT_REGISTRY))
++        const missing: { name: string; version?: string }[] = []
++        for (const pkg of input?.add ?? []) {
++          const spec = [pkg.name, pkg.version].filter(Boolean).join("@")
++          const found = findPackageDir(spec)
++          if (!found) {
++            missing.push(pkg)
++            continue
++          }
++          const target = path.join(dir, "node_modules", pkg.name)
++          yield* fs.makeDirectory(path.dirname(target), { recursive: true }).pipe(
++            Effect.andThen(fs.copy(path.join(found, "node_modules", pkg.name), target, { overwrite: true })),
++            Effect.catch((cause) => Effect.logWarning("onprem package copy failed", { pkg: pkg.name, cause })),
++          )
++        }
++        if (registry === DEFAULT_REGISTRY || missing.length === 0) return
++        remaining = { add: missing }
++      }
++
++      const add = remaining?.add.map((pkg) => [pkg.name, pkg.version].filter(Boolean).join("@")) ?? []
+       if (
+         yield* Effect.gen(function* () {
+           const nodeModulesExists = yield* afs.existsSafe(path.join(dir, "node_modules"))
+@@ -190,7 +252,8 @@ const layer = Layer.effect(
      }, Effect.scoped)
  
      const which = Effect.fn("Npm.which")(function* (pkg: string, bin?: string) {

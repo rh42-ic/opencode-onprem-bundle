@@ -16,7 +16,7 @@
     {
       "file": "002-npm-onprem-gate.patch",
       "target": "packages/core/src/npm.ts",
-      "description": "新增 findPackageDir() 函数（用 npa 解析 git URL/@latest 等格式提取包名），onprem 模式下阻断 npm 网络安装"
+      "description": "新增 findPackageDir() 函数（用 npa 解析 git URL/@latest 等格式提取包名），onprem 模式下默认阻断 npm 网络安装（add()/install() 均只从预置目录解析或拷贝）；显式配置了非默认 registry（如内网镜像）时放行正常安装流程"
     },
     {
       "file": "003-file-type-deps.patch",
@@ -35,7 +35,7 @@
     "ripgrep": "15.1.0",
     "github_lsp": 7,
     "eslint_lsp": "vscode-eslint (main 分支源码编译, 与原版下载行为一致) + eslint 本体 (npm)",
-    "npm_packages": 13,
+    "npm_packages": 14,
     "extra_plugins": ["opencode-anthropic-auth", "oh-my-openagent", "oh-my-opencode-slim", "superpowers", "@tarquinen/opencode-dcp", "opencode-supermemory", "opencode-visual-cache"],
     "models_catalog": "models.dev/api.json snapshot"
   },
