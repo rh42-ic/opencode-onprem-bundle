@@ -23,7 +23,7 @@ opencode-dev/
 │   ├── src/                          # 附加源码（runtime 补丁）
 │   │   └── onprem-gate.ts            # onprem 门禁逻辑
 │   └── plugins.json                  # 额外插件声明
-└── opencode-1.18.30/                  # upstream（用于开发和测试）
+└── opencode-1.18.31/                  # upstream（用于开发和测试）
 ```
 
 ### 工作流
@@ -33,7 +33,7 @@ opencode-dev/
 2. git diff 生成 patch → 覆盖 patches/
 3. cp scripts/* → upstream/scripts/onprem/
 4. 在 upstream 中运行 bun run scripts/onprem/pack.ts
-5. 输出 opencode-onprem-v1.18.30-linux-x64.tar.zst（仅 CLI）
+5. 输出 opencode-onprem-v1.18.31-linux-x64.tar.zst（仅 CLI）
 ```
 
 ---
@@ -195,7 +195,7 @@ const which = Effect.fn("Npm.which")(function* (pkg: string, bin?: string) {
 ## Bundle 目录结构
 
 ```
-opencode-onprem-v1.18.30-linux-x64/
+opencode-onprem-v1.18.31-linux-x64/
 ├── bin/                               # Linux/macOS: symlink → assets 中工具
 │   │                                   # Windows:    shim.exe 副本 + .shim 配置
 │   ├── opencode                      # CLI standalone binary (bun build --single)
