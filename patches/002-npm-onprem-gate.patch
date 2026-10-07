@@ -1,5 +1,4 @@
 diff --git a/packages/core/src/npm.ts b/packages/core/src/npm.ts
-index 30e12cf..7bfca43 100644
 --- a/packages/core/src/npm.ts
 +++ b/packages/core/src/npm.ts
 @@ -1,6 +1,7 @@
@@ -7,10 +6,10 @@ index 30e12cf..7bfca43 100644
  
  import path from "path"
 +import { existsSync } from "node:fs"
+ import { createRequire } from "module"
+ import { pathToFileURL } from "url"
  import npa from "npm-package-arg"
- import { Effect, Schema, Context, Layer, Option, FileSystem } from "effect"
- import { NodeFileSystem } from "@effect/platform-node"
-@@ -13,6 +14,28 @@ import { LayerNode } from "./effect/layer-node"
+@@ -15,6 +16,28 @@
  import { makeRuntime } from "./effect/runtime"
  import { NpmConfig } from "./npm-config"
  
@@ -39,7 +38,7 @@ index 30e12cf..7bfca43 100644
  export class InstallFailedError extends Schema.TaggedErrorClass<InstallFailedError>()("NpmInstallFailedError", {
    add: Schema.Array(Schema.String).pipe(Schema.optional),
    dir: Schema.String,
-@@ -113,7 +136,6 @@ const layer = Layer.effect(
+@@ -121,7 +144,6 @@
        )
  
      const add = Effect.fn("Npm.add")(function* (pkg: string) {
@@ -47,7 +46,7 @@ index 30e12cf..7bfca43 100644
        const name = (() => {
          try {
            return npa(pkg).name ?? pkg
-@@ -122,6 +144,22 @@ const layer = Layer.effect(
+@@ -130,6 +152,22 @@
          }
        })()
  
@@ -70,7 +69,7 @@ index 30e12cf..7bfca43 100644
        if (yield* afs.existsSafe(path.join(dir, "node_modules", name))) {
          return resolveEntryPoint(name, path.join(dir, "node_modules", name))
        }
-@@ -143,7 +181,31 @@ const layer = Layer.effect(
+@@ -151,7 +189,31 @@
        )
        if (!canWrite) return
  
@@ -103,7 +102,7 @@ index 30e12cf..7bfca43 100644
        if (
          yield* Effect.gen(function* () {
            const nodeModulesExists = yield* afs.existsSafe(path.join(dir, "node_modules"))
-@@ -190,7 +252,8 @@ const layer = Layer.effect(
+@@ -198,7 +260,8 @@
      }, Effect.scoped)
  
      const which = Effect.fn("Npm.which")(function* (pkg: string, bin?: string) {

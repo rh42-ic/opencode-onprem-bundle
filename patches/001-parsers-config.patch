@@ -1,5 +1,4 @@
 diff --git a/packages/tui/src/parsers-config.ts b/packages/tui/src/parsers-config.ts
-index 0450c4d..b8705f4 100644
 --- a/packages/tui/src/parsers-config.ts
 +++ b/packages/tui/src/parsers-config.ts
 @@ -1,9 +1,27 @@
@@ -31,7 +30,7 @@ index 0450c4d..b8705f4 100644
      {
        filetype: "python",
        wasm: "https://github.com/tree-sitter/tree-sitter-python/releases/download/v0.23.6/tree-sitter-python.wasm",
-@@ -382,5 +400,5 @@ export default {
+@@ -382,5 +400,5 @@
          ],
        },
      },
