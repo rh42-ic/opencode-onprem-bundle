@@ -327,11 +327,14 @@ export OPENCODE_DISABLE_AUTOUPDATE=true
 export OPENCODE_DISABLE_MODELS_FETCH=true
 export OPENCODE_DISABLE_LSP_DOWNLOAD=true
 export OPENCODE_MODELS_PATH="$OPENCODE_ONPREM_DIR/assets/models/models.json"
+export OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=65536
 
 echo "[opencode onprem] loaded from $OPENCODE_ONPREM_DIR"
 ```
 
 用户只需 `source env.sh`，所有 ENV 和 PATH 即就绪。
+
+> **为什么需要 `OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX`**：opencode v1 在 `provider/transform.ts` 中把请求的 `max_tokens` 硬编码为 `Math.min(model.limit.output, 32000)`，导致本地 LLM 即使配置了更大的 `limit.output`（如 50000），实际输出也会在 32000 token 处被截断（thinking 同样计入输出 token）。该环境变量作为全局上限参与计算，设为 65536 后可让 `limit.output <= 65536` 的配置原样生效；未在 catalog 中且未配置 limit 的模型，其 fallback 值也变为该上限。
 
 ### Windows: `env.bat` + `env.ps1`
 
@@ -346,10 +349,11 @@ Windows 上使用 [ScoopInstaller/Shim](https://github.com/ScoopInstaller/Shim) 
 **CMD 用法**: `call env.bat`
 **PowerShell 用法**: `. .\env.ps1`
 
-env 脚本只需做两件事：
+env 脚本职责：
 1. 设置 `OPENCODE_ONPREM_DIR` 为 bundle 根目录
 2. `bin/` 加入 `PATH`
 3. 设置 `OPENCODE_DISABLE_*` 环境变量
+4. 设置 `OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX` 输出上限（见上）
 
 不再扫描 assets 子目录。所有工具通过 `bin/` 下的 shim 发现，PATH 保持干净。
 

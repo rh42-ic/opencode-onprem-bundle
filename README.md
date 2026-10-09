@@ -67,6 +67,7 @@ opencode-onprem-v1.18.35-linux-x64/
 | `OPENCODE_DISABLE_MODELS_FETCH` | 禁用模型列表远程获取 |
 | `OPENCODE_DISABLE_LSP_DOWNLOAD` | 禁用 LSP 自动下载 |
 | `OPENCODE_MODELS_PATH` | 预下载的 models catalog JSON 文件路径（自动指向 assets/models/models.json） |
+| `OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX` | 单次输出 token 上限（bundle 设为 65536）。opencode v1 硬编码 32000 会压低模型 `limit.output`，该值须 >= 模型配置的 `limit.output` 才生效 |
 
 ## 构建 bundle
 

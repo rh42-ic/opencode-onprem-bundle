@@ -18,4 +18,7 @@ $env:OPENCODE_DISABLE_LSP_DOWNLOAD = "true"
 
 $env:OPENCODE_MODELS_PATH = "$env:OPENCODE_ONPREM_DIR\assets\models\models.json"
 
+# 解除单次输出 token 的 32000 硬编码上限（须 >= 模型配置的 limit.output）
+$env:OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX = "65536"
+
 Write-Host "[opencode onprem] loaded from $env:OPENCODE_ONPREM_DIR"

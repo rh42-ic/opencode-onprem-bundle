@@ -15,4 +15,7 @@ set "OPENCODE_DISABLE_LSP_DOWNLOAD=true"
 
 set "OPENCODE_MODELS_PATH=%OPENCODE_ONPREM_DIR%\assets\models\models.json"
 
+REM 解除单次输出 token 的 32000 硬编码上限（须 >= 模型配置的 limit.output）
+set "OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=65536"
+
 echo [opencode onprem] loaded from %OPENCODE_ONPREM_DIR%
